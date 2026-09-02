@@ -1,0 +1,8 @@
+DROP TABLE IF EXISTS otp_verificaciones;
+DROP TABLE IF EXISTS imagenes_reporte;
+DROP TABLE IF EXISTS comentarios;
+DROP TABLE IF EXISTS historial_estados;
+DROP TABLE IF EXISTS reportes;
+DROP TABLE IF EXISTS casos;
+DROP TABLE IF EXISTS usuarios;
+DROP TABLE IF EXISTS zonas;
