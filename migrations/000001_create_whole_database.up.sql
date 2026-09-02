@@ -9,8 +9,8 @@ CREATE TABLE "usuarios" (
   "password_hash" varchar,
   "zona_id" uuid,
   "estado_cuenta" varchar,
-  "created_at" timestamp,
-  "updated_at" timestamp
+  "created_at" timestamp DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE "otp_verificaciones" (
@@ -20,7 +20,7 @@ CREATE TABLE "otp_verificaciones" (
   "tipo" varchar,
   "estado" varchar,
   "expira_at" timestamp,
-  "created_at" timestamp
+  "created_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE "zonas" (
@@ -33,8 +33,8 @@ CREATE TABLE "casos" (
   "id" uuid PRIMARY KEY,
   "nombre" varchar,
   "descripcion" text,
-  "created_at" timestamp,
-  "updated_at" timestamp
+  "created_at" timestamp DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE "reportes" (
@@ -54,8 +54,8 @@ CREATE TABLE "reportes" (
   "sospechoso" boolean DEFAULT false,
   "llm_analizado_at" timestamp,
   "fecha_eliminacion_programada" date,
-  "created_at" timestamp,
-  "updated_at" timestamp
+  "created_at" timestamp DEFAULT CURRENT_TIMESTAMP,
+  "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE "imagenes_reporte" (
@@ -70,7 +70,7 @@ CREATE TABLE "comentarios" (
   "reporte_id" uuid,
   "usuario_id" uuid,
   "comentario" text,
-  "created_at" timestamp
+  "created_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE "historial_estados" (
@@ -79,7 +79,7 @@ CREATE TABLE "historial_estados" (
   "estado" varchar,
   "cambiado_por" uuid,
   "motivo" text,
-  "changed_at" timestamp
+  "changed_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE UNIQUE INDEX ON "imagenes_reporte" ("reporte_id", "orden");
