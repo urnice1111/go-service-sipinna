@@ -67,7 +67,6 @@ func CitizenSignInHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			Email:           optionalString(req.Email),
 			TelephoneNumber: optionalString(req.TelephoneNumber),
 			HashedPassword:  string(HashedPassword),
-			AccountState:    "active",
 		}
 
 		newUser, err := repository.CreateUser(pool, user)

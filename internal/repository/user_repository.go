@@ -16,36 +16,35 @@ func CreateUser(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 
 	defer cancel()
 
-	var query string = `
-		INSERT INTO usuarios 
-		(id, nombre, rol, edad, genero, email, telefono, password_hash, zona_id, estado_cuenta)
-		VALUES(
-			$1, 
-			$2, 
-			$3, 
-			$4, 
-			$5, 
-			NULLIF(BTRIM($6), ''),
-    		NULLIF(BTRIM($7), ''), 
-			$8, 
-			$9, 
-			$10)
+	const queryCrearCiudadano = `
+	WITH nuevo_usuario AS (
+		INSERT INTO usuarios (id, nombre, telefono, email, password_hash)
+		VALUES (
+			$1,
+			$2,
+			NULLIF(BTRIM($3), ''),
+			NULLIF(BTRIM($4), ''),
+			$5
+		)
 		RETURNING id, nombre, email, created_at, updated_at
-
+	),
+	nuevo_ciudadano AS (
+		INSERT INTO ciudadanos (id, edad, genero)
+		SELECT id, $6, $7 FROM nuevo_usuario
+	)
+	SELECT id, nombre, email, created_at, updated_at FROM nuevo_usuario;
 	`
+
 	var err = pool.QueryRow(
 		ctx,
-		query,
+		queryCrearCiudadano,
 		user.ID,
 		user.Name,
-		user.Role,
-		user.Age,
-		user.Genre,
-		user.Email,
 		user.TelephoneNumber,
+		user.Email,
 		user.HashedPassword,
-		user.ZoneID,
-		user.AccountState).Scan(
+		user.Age,
+		user.Genre).Scan(
 		&user.ID,
 		&user.Name,
 		&user.Email,
