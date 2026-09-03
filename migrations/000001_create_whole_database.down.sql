@@ -4,5 +4,10 @@ DROP TABLE IF EXISTS comentarios;
 DROP TABLE IF EXISTS historial_estados;
 DROP TABLE IF EXISTS reportes;
 DROP TABLE IF EXISTS casos;
+DROP TABLE IF EXISTS ciudadanos;
+DROP TABLE IF EXISTS admins;
 DROP TABLE IF EXISTS usuarios;
 DROP TABLE IF EXISTS zonas;
+
+DROP TYPE IF EXISTS account_status;
+DROP TYPE IF EXISTS admin_role;

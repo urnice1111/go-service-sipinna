@@ -1,16 +1,27 @@
 CREATE TABLE "usuarios" (
   "id" uuid PRIMARY KEY,
   "nombre" varchar,
-  "rol" varchar,
-  "edad" int,
-  "genero" varchar,
-  "email" varchar UNIQUE,
   "telefono" varchar UNIQUE,
+  "email" varchar UNIQUE,
   "password_hash" varchar,
-  "zona_id" uuid,
-  "estado_cuenta" varchar,
   "created_at" timestamp DEFAULT CURRENT_TIMESTAMP,
-  "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP
+  "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP 
+);
+
+CREATE TABLE "ciudadanos"(
+  "id" uuid PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+  "edad" int,
+  "genero" varchar
+);
+
+CREATE TYPE account_status AS ENUM ('pendiente', 'activada');
+CREATE TYPE admin_role AS ENUM('alimentador', 'administrador');
+
+CREATE TABLE "admins" (
+  "id" uuid PRIMARY KEY REFERENCES usuarios(id) ON DELETE CASCADE,
+  "rol" admin_role NOT NULL,
+  "zona_id" uuid,
+  "estado_cuenta" account_status NOT NULL DEFAULT 'pendiente'
 );
 
 CREATE TABLE "otp_verificaciones" (
@@ -40,7 +51,7 @@ CREATE TABLE "casos" (
 CREATE TABLE "reportes" (
   "id" uuid PRIMARY KEY,
   "folio" varchar UNIQUE,
-  "usuario_id" uuid,
+  "ciudadano_id" uuid,
   "descripcion" text,
   "latitud" decimal,
   "longitud" decimal,
@@ -58,6 +69,7 @@ CREATE TABLE "reportes" (
   "updated_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
 
+
 CREATE TABLE "imagenes_reporte" (
   "id" uuid PRIMARY KEY,
   "reporte_id" uuid,
@@ -68,7 +80,7 @@ CREATE TABLE "imagenes_reporte" (
 CREATE TABLE "comentarios" (
   "id" uuid PRIMARY KEY,
   "reporte_id" uuid,
-  "usuario_id" uuid,
+  "admin_id" uuid,
   "comentario" text,
   "created_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
@@ -82,15 +94,15 @@ CREATE TABLE "historial_estados" (
   "changed_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX idx_reporte_folio ON reportes (folio);
+
 CREATE UNIQUE INDEX ON "imagenes_reporte" ("reporte_id", "orden");
 
-COMMENT ON COLUMN "usuarios"."zona_id" IS 'Solo aplica a alimentador';
-
-ALTER TABLE "usuarios" ADD FOREIGN KEY ("zona_id") REFERENCES "zonas" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "admins" ADD FOREIGN KEY ("zona_id") REFERENCES "zonas" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "otp_verificaciones" ADD FOREIGN KEY ("usuario_id") REFERENCES "usuarios" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "reportes" ADD FOREIGN KEY ("usuario_id") REFERENCES "usuarios" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "reportes" ADD FOREIGN KEY ("ciudadano_id") REFERENCES "ciudadanos" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "reportes" ADD FOREIGN KEY ("zona_id") REFERENCES "zonas" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
@@ -100,8 +112,8 @@ ALTER TABLE "imagenes_reporte" ADD FOREIGN KEY ("reporte_id") REFERENCES "report
 
 ALTER TABLE "comentarios" ADD FOREIGN KEY ("reporte_id") REFERENCES "reportes" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "comentarios" ADD FOREIGN KEY ("usuario_id") REFERENCES "usuarios" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "comentarios" ADD FOREIGN KEY ("admin_id") REFERENCES "admins" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
 ALTER TABLE "historial_estados" ADD FOREIGN KEY ("reporte_id") REFERENCES "reportes" ("id") DEFERRABLE INITIALLY IMMEDIATE;
 
-ALTER TABLE "historial_estados" ADD FOREIGN KEY ("cambiado_por") REFERENCES "usuarios" ("id") DEFERRABLE INITIALLY IMMEDIATE;
+ALTER TABLE "historial_estados" ADD FOREIGN KEY ("cambiado_por") REFERENCES "admins" ("id") DEFERRABLE INITIALLY IMMEDIATE;
