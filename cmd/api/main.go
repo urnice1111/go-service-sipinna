@@ -39,7 +39,8 @@ func main() {
 		})
 	})
 
-	router.POST("/user", handlers.CitizenSignInHandler(pool))
+	router.POST("/auth/citizen", handlers.CitizenSignInHandler(pool))
+	router.POST("/auth/admin", handlers.AdminSignInHandler(pool))
 
 	router.Run(":" + cfg.Port)
 
