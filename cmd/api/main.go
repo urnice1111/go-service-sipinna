@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/database"
 	"go-service-sipinna/internal/handlers"
 	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,11 +21,23 @@ func main() {
 		log.Fatal("Failed to load configuration", err)
 	}
 
+	if err := os.MkdirAll("./uploads", 0755); err != nil {
+		panic(fmt.Sprintf("Failed to create uploads directory: %v", err))
+	}
+
 	var pool *pgxpool.Pool
 	pool, err = database.Connect(cfg.DatabaseURL)
 
 	if err != nil {
 		log.Fatal("Failed to connect to database", err)
+	}
+
+	/*Handler para nuevo s3 uploader que esta definido en handlers*/
+
+	uploader, err := handlers.NewS3Uploader("bucket_name")
+
+	if err != nil {
+		panic(err)
 	}
 
 	defer pool.Close()
@@ -41,6 +55,7 @@ func main() {
 
 	router.POST("/auth/citizen", handlers.CitizenSignInHandler(pool))
 	router.POST("/auth/admin", handlers.AdminSignInHandler(pool))
+	router.POST("/upload", handlers.UploadToS3(uploader))
 
 	router.Run(":" + cfg.Port)
 
