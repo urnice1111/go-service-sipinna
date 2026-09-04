@@ -9,6 +9,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type UserType struct {
+	UserType string
+}
+
 // GetUserByContact looks up credentials using either an email or a telephone number.
 func GetUserByContact(pool *pgxpool.Pool, email, telephoneNumber string) (*models.User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -29,6 +33,33 @@ func GetUserByContact(pool *pgxpool.Pool, email, telephoneNumber string) (*model
 	}
 	return &user, nil
 }
+
+// func GetUserType(pool *pgxpool.Pool, userId string) (*string, error) {
+// 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+// 	var userType UserType
+// 	defer cancel()
+
+// 	const query = `
+// 		SELECT IF(COUNT(*) > 0, rol, 'citizen') AS row_exists
+// 		FROM admins
+// 		WHERE id = $1;
+// 	`
+
+// 	var err = pool.QueryRow(
+// 		ctx,
+// 		query,
+// 		userId,
+// 	).Scan(
+// 		&userType.UserType,
+// 	)
+
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	return
+
+// }
 
 func CreateUser(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 	var ctx context.Context

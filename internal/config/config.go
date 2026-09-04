@@ -10,9 +10,10 @@ import (
 )
 
 type Config struct {
-	DatabaseURL string
-	Port        string
-	JWTSecret   string
+	DatabaseURL   string
+	Port          string
+	JWTSecret     string
+	SipinnaBucket string
 }
 
 func Load() (*Config, error) {
@@ -22,9 +23,10 @@ func Load() (*Config, error) {
 	}
 
 	var config *Config = &Config{
-		DatabaseURL: os.Getenv("DATABASE_URL"),
-		Port:        os.Getenv("PORT"),
-		JWTSecret:   os.Getenv("JWT_SECRET"),
+		DatabaseURL:   os.Getenv("DATABASE_URL"),
+		Port:          os.Getenv("PORT"),
+		JWTSecret:     os.Getenv("JWT_SECRET"),
+		SipinnaBucket: os.Getenv("SIPINNA_BUCKET"),
 	}
 
 	if strings.TrimSpace(config.JWTSecret) == "" {

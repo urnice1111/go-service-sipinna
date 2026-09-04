@@ -36,7 +36,7 @@ func main() {
 
 	/*Handler para nuevo s3 uploader que esta definido en handlers*/
 
-	uploader, err := handlers.NewS3Uploader("bucket_name")
+	uploader, err := handlers.NewS3Uploader(cfg.SipinnaBucket)
 
 	if err != nil {
 		panic(err)

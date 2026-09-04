@@ -187,6 +187,8 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
+		
+
 		respondWithToken(c, http.StatusOK, user.ID, cfg, false)
 	}
 }
