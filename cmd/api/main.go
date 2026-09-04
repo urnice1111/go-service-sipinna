@@ -48,20 +48,6 @@ func main() {
 
 	var router *gin.Engine = gin.Default()
 	router.SetTrustedProxies(nil)
-	router.Use(cors.New(cors.Config{
-		AllowOrigins: []string{
-			"http://localhost:3000",
-			"http://localhost:5173",
-		},
-		AllowMethods: []string{
-			"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS",
-		},
-		AllowHeaders: []string{
-			"Origin", "Content-Type", "Authorization",
-		},
-		MaxAge: 12 * time.Hour,
-	}))
-
 	router.GET("/", func(c *gin.Context) {
 		//Returns a map: [string]any{}
 		c.JSON(200, gin.H{
@@ -70,6 +56,21 @@ func main() {
 			"database": "connected",
 		})
 	})
+
+	router.Use(cors.New(cors.Config{
+		AllowOrigins: []string{
+			"http://localhost:5173", // Vite
+			"http://localhost:3000", // Create React App
+		},
+		AllowMethods: []string{
+			"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS",
+		},
+		AllowHeaders: []string{
+			"Origin", "Content-Type", "Authorization",
+		},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
 	router.POST("/auth/citizen", handlers.CitizenSignInHandler(pool, cfg))
 	router.POST("/auth/admin", handlers.AdminSignInHandler(pool, cfg))
