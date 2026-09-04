@@ -1,130 +1,74 @@
 package handlers
 
 import (
-	"context"
-	"errors"
+	"fmt"
 	"go-service-sipinna/internal/models"
-	"time"
+	"go-service-sipinna/internal/repository"
+	"net/http"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func CreateReportHandler(pool *pgxpool.Pool, r *models.Report, ps []string, ciudadanoID *string) (*models.Report, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+type CreateReport struct {
+	Description      string   `json:"description" db:"descripcion"`
+	Latitude         float32  `json:"latitude" db:"latitud"`
+	Longitude        float32  `json:"longitude" db:"longitud"`
+	ChildrenQuantity int      `json:"children_quantity" db:"cantidad_ninos"`
+	ChildrenAge      string   `json:"children_age" db:"edad_ninos"`
+	WorkType         string   `json:"work_type" db:"tipo_trabajo"`
+	SightingTime     string   `json:"sighting_time" db:"horario_avistamiento"`
+	Photos           []string `json:"photos,omitempty"`
+}
 
-	defer cancel()
+func CreateReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetString("user_id")
+		nonExisting := c.GetBool("is_admin")
+		if !nonExisting {
+			fmt.Println("no existe")
+		} else {
+			fmt.Println("si existe")
+		}
 
-	const queryCrearReporte = `
-	WITH distancias AS (
-		SELECT
-			id,
-			2 * 6371000 * ASIN(
-				SQRT(
-					LEAST(1.0, GREATEST(0.0,
-						POWER(
-							SIN(
-								RADIANS(latitude - $5::double precision) / 2
-							),
-							2
-						)
-						+
-						COS(RADIANS($5::double precision))
-						* COS(RADIANS(latitude))
-						* POWER(
-							SIN(
-								RADIANS(longitude - $6::double precision) / 2
-							),
-							2
-						)
-					))
-				)
-			) AS distancia_metros
-		FROM zonas
-		WHERE latitude IS NOT NULL
-		AND longitude IS NOT NULL
-		AND id IS NOT NULL
-	),
-	ubicacion_cercana AS (
-		SELECT id
-		FROM distancias
-		ORDER BY distancia_metros, id
-		LIMIT 1
-	),
-	nuevo_reporte AS (
-		INSERT INTO reportes (
-			id,
-			folio,
-			ciudadano_id,
-			descripcion,
-			latitud,
-			longitud,
-			cantidad_ninos,
-			edad_ninos,
-			tipo_trabajo,
-			horario_avistamiento,
-			zona_id,
-			fecha_eliminacion_programada
-		)
-		SELECT
-			$1,
-			$2,
-			$3,
-			$4,
-			$5::double precision,
-			$6::double precision,
-			$7,
-			$8,
-			$9,
-			$10
-			zona_id,
-			$11
-		FROM ubicacion_cercana
-		RETURNING id, zona_id, created_at
-	),
-	nuevas_imagenes AS (
-		INSERT INTO reporte_imagenes (
-			reporte_id,
-			url
-		)
-		SELECT
-			reporte.id,
-			imagen.url
-		FROM nuevo_reporte AS reporte
-		CROSS JOIN UNNEST($5::text[]) AS imagen(url)
-	)
-	SELECT id, zona_id, created_at
-	FROM nuevo_reporte;
-	`
+		fmt.Println(userID)
+		var req CreateReport
+		if err := c.BindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		}
 
-	err := pool.QueryRow(
-		ctx,
-		queryCrearReporte,
-		r.ID,
-		r.Folio,
-		ciudadanoID,
-		r.Description,
-		r.Latitude,
-		r.Longitude,
-		r.ChildrenQuantity,
-		r.ChildrenAge,
-		r.WorkType,
-		r.SightingTime,
-		r.DeleteDate,
-	).Scan(
-		&r.ID,
-		&r.ZoneID,
-		&r.CreatedAt,
-	)
+		if req.Photos == nil {
+			req.Photos = []string{}
+		}
 
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, errors.New("Thers no valid zones")
+		idV7, err := uuid.NewV7()
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate uuid" + err.Error()})
+			return
+		}
+
+		report := &models.Report{
+			ID:               idV7,
+			Description:      req.Description,
+			Latitude:         req.Latitude,
+			Longitude:        req.Longitude,
+			ChildrenQuantity: req.ChildrenQuantity,
+			ChildrenAge:      req.ChildrenAge,
+			WorkType:         req.WorkType,
+			SightingTime:     req.SightingTime,
+		}
+
+		newReport, err := repository.CreateReport(pool, report, req.Photos, &userID)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"reporte": newReport})
+
 	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return r, nil
 
 }

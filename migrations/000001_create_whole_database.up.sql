@@ -25,7 +25,7 @@ CREATE TABLE "admins" (
 );
 
 CREATE TABLE "otp_verificaciones" (
-  "id" uuid PRIMARY KEY,
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "usuario_id" uuid,
   "codigo_hash" varchar,
   "tipo" varchar,
@@ -35,7 +35,7 @@ CREATE TABLE "otp_verificaciones" (
 );
 
 CREATE TABLE "zonas" (
-  "id" uuid PRIMARY KEY,
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "nombre" varchar,
   "municipio" varchar,
   "latitude" decimal,
@@ -94,6 +94,8 @@ CREATE TABLE "historial_estados" (
   "motivo" text,
   "changed_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE SEQUENCE reportes_folio_seq START WITH 1;
 
 CREATE INDEX idx_reporte_folio ON reportes (folio);
 

@@ -100,7 +100,7 @@ func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFun
 			return
 		}
 
-		respondWithToken(c, http.StatusCreated, newUser.ID, cfg)
+		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, false)
 
 	}
 }
@@ -159,7 +159,7 @@ func AdminSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc 
 			return
 		}
 
-		respondWithToken(c, http.StatusCreated, newUser.ID, cfg)
+		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, false)
 
 	}
 
@@ -187,22 +187,24 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		respondWithToken(c, http.StatusOK, user.ID, cfg)
+		respondWithToken(c, http.StatusOK, user.ID, cfg, false)
 	}
 }
 
 /*HELPERS*/
 
-func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.Config) {
+func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.Config, isAdmin bool) {
 	if strings.TrimSpace(cfg.JWTSecret) == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT secret is not configured"})
 		return
 	}
 
 	claims := jwt.MapClaims{
-		"user_id": userID.String(),
-		"exp":     time.Now().Add(time.Hour).Unix(),
+		"user_id":  userID.String(),
+		"exp":      time.Now().Add(time.Hour).Unix(),
+		"is_admin": isAdmin,
 	}
+
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(cfg.JWTSecret))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})

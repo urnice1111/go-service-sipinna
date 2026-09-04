@@ -62,6 +62,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"user_id": c.GetString("user_id")})
 	})
 	router.POST("/upload", handlers.UploadToS3(uploader))
+	router.POST("/report", middleware.AuthMiddleware(cfg), handlers.CreateReportHandler(pool))
 
 	router.Run(":" + cfg.Port)
 
