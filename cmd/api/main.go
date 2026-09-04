@@ -5,7 +5,9 @@ import (
 	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/database"
 	"go-service-sipinna/internal/handlers"
+	"go-service-sipinna/internal/middleware"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -53,8 +55,12 @@ func main() {
 		})
 	})
 
-	router.POST("/auth/citizen", handlers.CitizenSignInHandler(pool))
-	router.POST("/auth/admin", handlers.AdminSignInHandler(pool))
+	router.POST("/auth/citizen", handlers.CitizenSignInHandler(pool, cfg))
+	router.POST("/auth/admin", handlers.AdminSignInHandler(pool, cfg))
+	router.POST("/auth/login", handlers.LoginHandler(pool, cfg))
+	router.GET("/auth/me", middleware.AuthMiddleware(cfg), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"user_id": c.GetString("user_id")})
+	})
 	router.POST("/upload", handlers.UploadToS3(uploader))
 
 	router.Run(":" + cfg.Port)

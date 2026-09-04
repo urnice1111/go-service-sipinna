@@ -1,13 +1,18 @@
 package handlers
 
 import (
+	"errors"
+	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -29,7 +34,18 @@ type CreateAdmin struct {
 	Password        string `json:"password" binding:"required"`
 }
 
-func CitizenSignInHandler(pool *pgxpool.Pool) gin.HandlerFunc {
+type LoginRequest struct {
+	Email           string `json:"email" binding:"required_without=TelephoneNumber,excluded_with=TelephoneNumber,omitempty,email"`
+	TelephoneNumber string `json:"telefono" binding:"required_without=Email,excluded_with=Email,omitempty,e164"`
+	Password        string `json:"password" binding:"required"`
+}
+
+type AuthResponse struct {
+	Token  string    `json:"token"`
+	UserID uuid.UUID `json:"user_id"`
+}
+
+func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req CreateCitizen
 		if err := c.BindJSON(&req); err != nil {
@@ -63,6 +79,7 @@ func CitizenSignInHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate uuid" + err.Error()})
+			return
 		}
 
 		user := &models.User{
@@ -83,12 +100,12 @@ func CitizenSignInHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusCreated, newUser)
+		respondWithToken(c, http.StatusCreated, newUser.ID, cfg)
 
 	}
 }
 
-func AdminSignInHandler(pool *pgxpool.Pool) gin.HandlerFunc {
+func AdminSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req CreateAdmin
 		if err := c.BindJSON(&req); err != nil {
@@ -122,6 +139,7 @@ func AdminSignInHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate uuid" + err.Error()})
+			return
 		}
 
 		user := &models.User{
@@ -141,13 +159,58 @@ func AdminSignInHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusCreated, newUser)
+		respondWithToken(c, http.StatusCreated, newUser.ID, cfg)
 
 	}
 
 }
 
+func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req LoginRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		user, err := repository.GetUserByContact(pool, req.Email, req.TelephoneNumber)
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user"})
+			return
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(user.HashedPassword), []byte(req.Password)); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+			return
+		}
+
+		respondWithToken(c, http.StatusOK, user.ID, cfg)
+	}
+}
+
 /*HELPERS*/
+
+func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.Config) {
+	if strings.TrimSpace(cfg.JWTSecret) == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT secret is not configured"})
+		return
+	}
+
+	claims := jwt.MapClaims{
+		"user_id": userID.String(),
+		"exp":     time.Now().Add(time.Hour).Unix(),
+	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(cfg.JWTSecret))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	c.JSON(status, AuthResponse{Token: token, UserID: userID})
+}
 
 func optionalString(value string) *string {
 	value = strings.TrimSpace(value)

@@ -1,8 +1,10 @@
 package config
 
 import (
+	"errors"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -25,6 +27,10 @@ func Load() (*Config, error) {
 		JWTSecret:   os.Getenv("JWT_SECRET"),
 	}
 
-	return config, err
+	if strings.TrimSpace(config.JWTSecret) == "" {
+		return nil, errors.New("JWT_SECRET is required")
+	}
+
+	return config, nil
 
 }
