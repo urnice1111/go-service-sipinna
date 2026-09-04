@@ -37,7 +37,9 @@ CREATE TABLE "otp_verificaciones" (
 CREATE TABLE "zonas" (
   "id" uuid PRIMARY KEY,
   "nombre" varchar,
-  "municipio" varchar
+  "municipio" varchar,
+  "latitude" decimal,
+  "longitude" decimal
 );
 
 CREATE TABLE "casos" (
@@ -60,9 +62,9 @@ CREATE TABLE "reportes" (
   "tipo_trabajo" varchar,
   "horario_avistamiento" varchar,
   "zona_id" uuid,
-  "caso_id" uuid,
-  "estado" varchar,
-  "sospechoso" boolean DEFAULT false,
+  "caso_id" uuid DEFAULT NULL,
+  "estado" varchar DEFAULT 'pendiente',
+  "sospechoso" decimal,
   "llm_analizado_at" timestamp,
   "fecha_eliminacion_programada" date,
   "created_at" timestamp DEFAULT CURRENT_TIMESTAMP,
@@ -71,9 +73,8 @@ CREATE TABLE "reportes" (
 
 
 CREATE TABLE "imagenes_reporte" (
-  "id" uuid PRIMARY KEY,
+  "url" varchar PRIMARY KEY,
   "reporte_id" uuid,
-  "url" varchar,
   "orden" int
 );
 
