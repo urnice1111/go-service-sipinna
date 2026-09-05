@@ -41,8 +41,7 @@ type LoginRequest struct {
 }
 
 type AuthResponse struct {
-	Token  string    `json:"token"`
-	UserID uuid.UUID `json:"user_id"`
+	Token string `json:"token"`
 }
 
 func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
@@ -100,7 +99,7 @@ func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFun
 			return
 		}
 
-		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, false)
+		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, false, "citizen")
 
 	}
 }
@@ -159,7 +158,7 @@ func AdminSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc 
 			return
 		}
 
-		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, false)
+		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, true, req.Role)
 
 	}
 
@@ -182,29 +181,36 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user"})
 			return
 		}
+
+		userType, err := repository.GetUserType(pool, user.ID)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user type"})
+			return
+		}
+
 		if err := bcrypt.CompareHashAndPassword([]byte(user.HashedPassword), []byte(req.Password)); err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 			return
 		}
 
-		
-
-		respondWithToken(c, http.StatusOK, user.ID, cfg, false)
+		respondWithToken(c, http.StatusOK, user.ID, cfg, false, userType)
 	}
 }
 
 /*HELPERS*/
 
-func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.Config, isAdmin bool) {
+func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.Config, isAdmin bool, userType string) {
 	if strings.TrimSpace(cfg.JWTSecret) == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT secret is not configured"})
 		return
 	}
 
 	claims := jwt.MapClaims{
-		"user_id":  userID.String(),
-		"exp":      time.Now().Add(time.Hour).Unix(),
-		"is_admin": isAdmin,
+		"user_id":   userID.String(),
+		"exp":       time.Now().Add(time.Hour).Unix(),
+		"is_admin":  isAdmin,
+		"user_type": userType,
 	}
 
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(cfg.JWTSecret))
@@ -213,7 +219,7 @@ func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.
 		return
 	}
 
-	c.JSON(status, AuthResponse{Token: token, UserID: userID})
+	c.JSON(status, AuthResponse{Token: token})
 }
 
 func optionalString(value string) *string {

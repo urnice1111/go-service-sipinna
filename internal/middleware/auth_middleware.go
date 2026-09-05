@@ -51,8 +51,17 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 			})
 			return
 		}
-
 		c.Set("is_admin", isAdmin)
+
+		userType, ok := claims["user_type"].(string)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "user_type missing or invalid",
+			})
+			return
+		}
+		c.Set("user_type", userType)
+
 		c.Next()
 	}
 }

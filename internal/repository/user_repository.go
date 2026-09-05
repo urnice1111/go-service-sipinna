@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"go-service-sipinna/internal/models"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -34,32 +37,31 @@ func GetUserByContact(pool *pgxpool.Pool, email, telephoneNumber string) (*model
 	return &user, nil
 }
 
-// func GetUserType(pool *pgxpool.Pool, userId string) (*string, error) {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-// 	var userType UserType
-// 	defer cancel()
+func GetUserType(
+	pool *pgxpool.Pool,
+	userID uuid.UUID,
+) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-// 	const query = `
-// 		SELECT IF(COUNT(*) > 0, rol, 'citizen') AS row_exists
-// 		FROM admins
-// 		WHERE id = $1;
-// 	`
+	const query = `
+		SELECT COALESCE(
+			(SELECT rol::text
+			 FROM admins
+			 WHERE id = $1
+			 LIMIT 1),
+			'citizen'
+		)
+	`
 
-// 	var err = pool.QueryRow(
-// 		ctx,
-// 		query,
-// 		userId,
-// 	).Scan(
-// 		&userType.UserType,
-// 	)
+	var userType string
 
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	if err := pool.QueryRow(ctx, query, userID).Scan(&userType); err != nil {
+		return "", fmt.Errorf("get user type: %w", err)
+	}
 
-// 	return
-
-// }
+	return userType, nil
+}
 
 func CreateUser(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 	var ctx context.Context
