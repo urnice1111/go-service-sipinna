@@ -72,3 +72,27 @@ func CreateReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 
 }
+
+func GetReportsByZone(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var zoneID string = c.Param("zone_id")
+
+		if zoneID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "you must provide a zone id"})
+			return
+		}
+
+		var err error
+		var reports []models.IndividualReport
+
+		reports, err = repository.GetReportsByZone(pool, zoneID)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"reports": reports})
+
+	}
+}

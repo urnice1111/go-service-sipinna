@@ -139,3 +139,65 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ps []string, ciudadanoID
 	return r, nil
 
 }
+
+func GetReportsByZone(pool *pgxpool.Pool, zoneID string) ([]models.IndividualReport, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	defer cancel()
+
+	const queryGetReports = `
+	select
+		folio,
+		descripcion,
+		latitud,
+		longitud,
+		cantidad_ninos,
+		tipo_trabajo,
+		reportes.created_at,
+		COALESCE(reportes.sospechoso, 0),
+		edad_ninos,
+		zonas.nombre,
+		usuarios.nombre as nombre_ciudadano from reportes
+	inner join zonas on reportes.zona_id = zonas.id
+	inner join usuarios on reportes.ciudadano_id = usuarios.id
+	where reportes.zona_id::text = $1 or UPPER(zonas.nombre) = UPPER($1);
+	`
+
+	rows, err := pool.Query(ctx, queryGetReports, zoneID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var AllReports []models.IndividualReport = []models.IndividualReport{}
+
+	for rows.Next() {
+		var ir models.IndividualReport
+		err = rows.Scan(
+			&ir.Folio,
+			&ir.Description,
+			&ir.Latitude,
+			&ir.Longitude,
+			&ir.ChildrenQuantity,
+			&ir.WorkType,
+			&ir.CreatedtAt,
+			&ir.SuspiciusLevel,
+			&ir.ChildrenAge,
+			&ir.ZoneName,
+			&ir.CitizenName,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		AllReports = append(AllReports, ir)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return AllReports, nil
+}

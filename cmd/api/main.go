@@ -80,6 +80,7 @@ func main() {
 	})
 	router.POST("/upload", handlers.UploadToS3(uploader))
 	router.POST("/report", middleware.AuthMiddleware(cfg), handlers.CreateReportHandler(pool))
+	router.GET("/report/:zone_id", middleware.AuthMiddleware(cfg), handlers.GetReportsByZone(pool))
 
 	router.Run(":" + cfg.Port)
 

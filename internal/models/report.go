@@ -20,9 +20,23 @@ type Report struct {
 	ZoneID           uuid.UUID  `json:"zone_id" db:"zona_id"`
 	CasoID           uuid.UUID  `json:"case_id" db:"caso_id"`
 	State            string     `json:"state" db:"estado"`
-	SuspiciusLevel   float32    `json:"suspicius_level" db:"sospechoso"`
+	SuspiciusLevel   float64    `json:"suspicius_level" db:"sospechoso"`
 	LLMAnalizedAt    time.Time  `json:"llm_analized_at" db:"llm_analizado_at"`
 	DeleteDate       time.Time  `json:"delete_date" db:"fecha_eliminacion_programada"`
 	CreatedAt        time.Time  `json:"created_at" db: "created_at"`
 	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
+}
+
+type IndividualReport struct {
+	Folio            string    `json:"folio" db:"folio"`
+	Description      string    `json:"description" db:"descripcion"`
+	Latitude         float32   `json:"latitude" db:"latitud"`
+	Longitude        float32   `json:"longitude" db:"longitud"`
+	ChildrenQuantity int       `json:"children_quantity" db:"cantidad_ninos"`
+	WorkType         string    `json:"work_type" db:"tipo_trabajo"`
+	CreatedtAt       time.Time `json:"created_at" db:"created_at"`
+	SuspiciusLevel   *float64  `json:"suspicius_level" db:"sospechoso"`
+	ChildrenAge      string    `json:"children_age" db:"edad_ninos"`
+	ZoneName         string    `json:"zone_name" db:"nombre_zona"`
+	CitizenName      string    `json:"citizen_name" db:"nombre_ciudadano"`
 }
