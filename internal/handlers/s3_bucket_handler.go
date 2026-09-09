@@ -84,31 +84,65 @@ func (u *S3Uploader) Upload(ctx context.Context, file *multipart.FileHeader, key
 	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", u.bucketName, key), nil
 }
 
-// uploadToS3 handler for S3 uploads
+// UploadToS3 handles multiple S3 uploads.
 func UploadToS3(uploader *S3Uploader) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		file, err := c.FormFile("file")
+		form, err := c.MultipartForm()
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "No file provided"})
-			return
-		}
-
-		// Generate S3 key (path within bucket)
-		key := fmt.Sprintf("uploads/%s", generateUniqueFilename(file.Filename))
-
-		url, err := uploader.Upload(c.Request.Context(), file, key)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":   "Upload failed",
-				"details": err.Error(),
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "Invalid multipart form",
 			})
 			return
 		}
 
+		files := form.File["files"]
+		if len(files) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "No files provided",
+			})
+			return
+		}
+
+		if len(files) > 2 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "maximum 2 photos permited",
+			})
+			return
+		}
+
+		uploaded := make([]gin.H, 0, len(files))
+
+		for _, file := range files {
+			key := fmt.Sprintf(
+				"uploads/%s",
+				generateUniqueFilename(file.Filename),
+			)
+
+			url, err := uploader.Upload(
+				c.Request.Context(),
+				file,
+				key,
+			)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"error":    "Upload failed",
+					"filename": file.Filename,
+					"details":  err.Error(),
+					"uploaded": uploaded,
+				})
+				return
+			}
+
+			uploaded = append(uploaded, gin.H{
+				"filename": file.Filename,
+				"url":      url,
+				"key":      key,
+			})
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"url":     url,
-			"key":     key,
+			"files":   uploaded,
 		})
 	}
 }
