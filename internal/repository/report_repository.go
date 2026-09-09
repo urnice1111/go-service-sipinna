@@ -147,21 +147,37 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string) ([]models.IndividualRep
 	defer cancel()
 
 	const queryGetReports = `
-	select
-		folio,
-		descripcion,
-		latitud,
-		longitud,
-		cantidad_ninos,
-		tipo_trabajo,
-		reportes.created_at,
-		COALESCE(reportes.sospechoso, 0),
-		edad_ninos,
-		zonas.nombre,
-		usuarios.nombre as nombre_ciudadano from reportes
-	inner join zonas on reportes.zona_id = zonas.id
-	inner join usuarios on reportes.ciudadano_id = usuarios.id
-	where reportes.zona_id::text = $1 or UPPER(zonas.municipio) = UPPER($1);
+	SELECT
+		r.folio,
+		r.descripcion,
+		r.latitud,
+		r.longitud,
+		r.cantidad_ninos,
+		r.tipo_trabajo,
+		r.created_at,
+		COALESCE(r.sospechoso, 0) AS sospechoso,
+		r.edad_ninos,
+		z.nombre AS nombre_zona,
+		u.nombre AS nombre_ciudadano,
+		he.estado AS ultimo_estado,
+		he.changed_at AS estado_changed_at
+	FROM reportes AS r
+	INNER JOIN zonas AS z
+		ON r.zona_id = z.id
+	INNER JOIN usuarios AS u
+		ON r.ciudadano_id = u.id
+	LEFT JOIN LATERAL (
+		SELECT
+			h.estado,
+			h.changed_at
+		FROM historial_estados AS h
+		WHERE h.reporte_id = r.id
+		ORDER BY h.changed_at DESC, h.id DESC
+		LIMIT 1
+	) AS he ON TRUE
+	WHERE
+		r.zona_id::text = $1
+		OR UPPER(z.municipio) = UPPER($1);
 	`
 
 	rows, err := pool.Query(ctx, queryGetReports, zoneID)
@@ -187,6 +203,8 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string) ([]models.IndividualRep
 			&ir.ChildrenAge,
 			&ir.ZoneName,
 			&ir.CitizenName,
+			&ir.LastState,
+			&ir.StateChangedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -202,4 +220,6 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string) ([]models.IndividualRep
 	return AllReports, nil
 }
 
-func GetReportByFolio(pool *pgxpool.Pool, reportID string)
+func GetReportByFolio(pool *pgxpool.Pool, reportID string) {
+
+}
