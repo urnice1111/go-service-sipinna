@@ -62,7 +62,7 @@ CREATE TABLE "reportes" (
   "tipo_trabajo" varchar,
   "horario_avistamiento" varchar,
   "zona_id" uuid,
-  "caso_id" uuid DEFAULT NULL,
+  "caso_id" uuid,
   "estado" varchar DEFAULT 'pendiente',
   "sospechoso" decimal,
   "llm_analizado_at" timestamp,
@@ -87,13 +87,14 @@ CREATE TABLE "comentarios" (
 );
 
 CREATE TABLE "historial_estados" (
-  "id" uuid PRIMARY KEY,
+  "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   "reporte_id" uuid,
   "estado" varchar,
-  "cambiado_por" uuid,
+  "cambiado_por" uuid DEFAULT NULL,
   "motivo" text,
   "changed_at" timestamp DEFAULT CURRENT_TIMESTAMP
 );
+
 
 CREATE SEQUENCE reportes_folio_seq START WITH 1;
 

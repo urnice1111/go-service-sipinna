@@ -11,3 +11,6 @@ DROP TABLE IF EXISTS zonas;
 
 DROP TYPE IF EXISTS account_status;
 DROP TYPE IF EXISTS admin_role;
+
+
+DROP SEQUENCE IF EXISTS reportes_folio_seq;

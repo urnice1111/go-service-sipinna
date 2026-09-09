@@ -161,7 +161,7 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string) ([]models.IndividualRep
 		usuarios.nombre as nombre_ciudadano from reportes
 	inner join zonas on reportes.zona_id = zonas.id
 	inner join usuarios on reportes.ciudadano_id = usuarios.id
-	where reportes.zona_id::text = $1 or UPPER(zonas.nombre) = UPPER($1);
+	where reportes.zona_id::text = $1 or UPPER(zonas.municipio) = UPPER($1);
 	`
 
 	rows, err := pool.Query(ctx, queryGetReports, zoneID)
@@ -201,3 +201,5 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string) ([]models.IndividualRep
 
 	return AllReports, nil
 }
+
+func GetReportByFolio(pool *pgxpool.Pool, reportID string)
