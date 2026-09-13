@@ -60,3 +60,41 @@ func CreateUser(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 	return user, nil
 
 }
+
+// Busca un usuario por su email (para el login)
+func FindUserByEmail(pool *pgxpool.Pool, email string) (*models.User, error) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+
+	defer cancel()
+
+	var query string = `
+		SELECT id, nombre, rol, COALESCE(edad, 0), COALESCE(genero, ''),
+		       email, telefono, password_hash, estado_cuenta, created_at, updated_at
+		FROM usuarios
+		WHERE email = $1
+	`
+
+	var user models.User
+	var err = pool.QueryRow(ctx, query, email).Scan(
+		&user.ID,
+		&user.Name,
+		&user.Role,
+		&user.Age,
+		&user.Genre,
+		&user.Email,
+		&user.TelephoneNumber,
+		&user.HashedPassword,
+		&user.AccountState,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}

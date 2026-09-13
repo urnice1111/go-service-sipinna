@@ -4,6 +4,7 @@ import (
 	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/database"
 	"go-service-sipinna/internal/handlers"
+	"go-service-sipinna/internal/middleware"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,10 @@ func main() {
 	})
 
 	router.POST("/user", handlers.CitizenSignInHandler(pool))
+	router.POST("/login", handlers.LoginHandler(pool, cfg.JWTSecret))
+
+	// Rutas que necesitan token
+	router.POST("/reporte", middleware.RequireAuth(cfg.JWTSecret), handlers.CreateReportHandler(pool))
 
 	router.Run(":" + cfg.Port)
 

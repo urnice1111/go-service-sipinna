@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -72,8 +74,18 @@ func CitizenSignInHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		newUser, err := repository.CreateUser(pool, user)
 
-		//TODO :- Add logic to verify what type of error is: if the user already exists etc
 		if err != nil {
+			// 23505 = unique_violation: el email o telefono ya estan registrados
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				if strings.Contains(pgErr.ConstraintName, "email") {
+					c.JSON(http.StatusConflict, gin.H{"error": "Ese correo ya está registrado"})
+				} else {
+					c.JSON(http.StatusConflict, gin.H{"error": "Ese teléfono ya está registrado"})
+				}
+				return
+			}
+
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error registering the user on the db" + err.Error()})
 			return
 		}
