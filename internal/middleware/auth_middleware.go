@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"go-service-sipinna/internal/config"
 	"net/http"
 	"strings"
@@ -32,6 +33,8 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
+		fmt.Printf("type: %T\n", claims["is_admin"])
+
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
 			return
@@ -44,6 +47,7 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		c.Set("user_id", id.String())
+
 		isAdmin, ok := claims["is_admin"].(bool)
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{

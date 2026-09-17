@@ -77,6 +77,15 @@ func GetReportsByZone(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var zoneID string = c.Param("zone_id")
 
+		isAdmin := c.GetBool("is_admin")
+
+		fmt.Println(isAdmin)
+
+		if !isAdmin {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Not admin"})
+			return
+		}
+
 		if zoneID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "you must provide a zone id"})
 			return
