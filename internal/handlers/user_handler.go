@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
@@ -41,7 +42,8 @@ type LoginRequest struct {
 }
 
 type AuthResponse struct {
-	Token string `json:"token"`
+	Token    string `json:"token"`
+	UserName string `json:"user_name"`
 }
 
 func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
@@ -99,7 +101,7 @@ func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFun
 			return
 		}
 
-		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, false, "citizen")
+		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, false, "citizen", "change_later")
 
 	}
 }
@@ -158,7 +160,7 @@ func AdminSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc 
 			return
 		}
 
-		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, true, req.Role)
+		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, true, req.Role, "change_later")
 
 	}
 
@@ -172,6 +174,8 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
+		fmt.Println(req.Email)
+
 		user, err := repository.GetUserByContact(pool, req.Email, req.TelephoneNumber)
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
@@ -182,6 +186,7 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
+		// I dunno why i did this, maybe drunk but change later to fetch insnant on previous query
 		userType, err := repository.GetUserType(pool, user.ID)
 
 		if err != nil {
@@ -194,13 +199,13 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		respondWithToken(c, http.StatusOK, user.ID, cfg, false, userType)
+		respondWithToken(c, http.StatusOK, user.ID, cfg, false, userType, user.Name)
 	}
 }
 
 /*HELPERS*/
 
-func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.Config, isAdmin bool, userType string) {
+func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.Config, isAdmin bool, userType string, userName string) {
 	if strings.TrimSpace(cfg.JWTSecret) == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT secret is not configured"})
 		return
@@ -219,7 +224,7 @@ func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.
 		return
 	}
 
-	c.JSON(status, AuthResponse{Token: token})
+	c.JSON(status, AuthResponse{Token: token, UserName: userName})
 }
 
 func optionalString(value string) *string {

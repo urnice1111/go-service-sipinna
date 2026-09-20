@@ -22,7 +22,7 @@ func GetUserByContact(pool *pgxpool.Pool, email, telephoneNumber string) (*model
 	defer cancel()
 
 	const query = `
-		SELECT id, password_hash
+		SELECT id, password_hash, nombre
 		FROM usuarios
 		WHERE (email = NULLIF($1, '') OR telefono = NULLIF($2, ''))
 	`
@@ -30,6 +30,7 @@ func GetUserByContact(pool *pgxpool.Pool, email, telephoneNumber string) (*model
 	err := pool.QueryRow(ctx, query, strings.TrimSpace(email), strings.TrimSpace(telephoneNumber)).Scan(
 		&user.ID,
 		&user.HashedPassword,
+		&user.Name,
 	)
 	if err != nil {
 		return nil, err
