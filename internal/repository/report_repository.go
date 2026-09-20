@@ -220,6 +220,55 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string) ([]models.IndividualRep
 	return AllReports, nil
 }
 
-func GetReportByFolio(pool *pgxpool.Pool, reportID string) {
+func GetReportsSummaryOfUser(pool *pgxpool.Pool, userID string) ([]models.IndividualReportInfoBrief, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*4)
+
+	defer cancel()
+
+	var query = `
+	select r.folio, h.estado, r.latitud, r.longitud, r.descripcion 
+	from reportes r
+		inner join historial_estados h 
+		on r.id = h.reporte_id
+		inner join
+		(
+			select reporte_id, MAX(changed_at) maxDate
+			from historial_estados
+			group by reporte_id
+		) b on r.id = b.reporte_id and h.changed_at = b.maxDate
+	where r.ciudadano_id = $1;
+	`
+
+	rows, err := pool.Query(ctx, query, userID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	var AllReportsSummary []models.IndividualReportInfoBrief = []models.IndividualReportInfoBrief{}
+
+	for rows.Next() {
+		var tempReport models.IndividualReportInfoBrief
+
+		err = rows.Scan(
+			&tempReport.Folio,
+			&tempReport.State,
+			&tempReport.Latitude,
+			&tempReport.Longitude,
+			&tempReport.Description,
+		)
+		if err != nil {
+			return nil, err
+		}
+		AllReportsSummary = append(AllReportsSummary, tempReport)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return AllReportsSummary, nil
 
 }

@@ -105,3 +105,24 @@ func GetReportsByZone(pool *pgxpool.Pool) gin.HandlerFunc {
 
 	}
 }
+
+func GetUsersReports(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.GetString("user_id")
+
+		if userID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No user id"})
+			return
+		}
+
+		reportsBrief, err := repository.GetReportsSummaryOfUser(pool, userID)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"reports": reportsBrief})
+
+	}
+}

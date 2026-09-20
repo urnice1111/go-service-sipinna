@@ -42,3 +42,11 @@ type IndividualReport struct {
 	LastState        string    `json:"last_state" db:"ultimo_estado"`
 	StateChangedAt   time.Time `json:"state_changed_at" db:"estado_changed_at"`
 }
+
+type IndividualReportInfoBrief struct {
+	Folio       string  `json:"folio" db:"folio"`
+	State       string  `json:"report_state" db:"report_state"`
+	Latitude    float32 `json:"latitude" db:"latitud"`
+	Longitude   float32 `json:"longitude" db:"longitud"`
+	Description string  `json:"description" db:"description"`
+}
