@@ -224,6 +224,9 @@ func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.
 		return
 	}
 
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("token", token, 3600, "/", "localhost", false, true)
+
 	c.JSON(status, AuthResponse{Token: token, UserName: userName})
 }
 
