@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"fmt"
 	"go-service-sipinna/internal/config"
 	"net/http"
 	"strings"
@@ -18,13 +17,22 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		parts := strings.Fields(c.GetHeader("Authorization"))
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header must be Bearer <token>"})
+		tokenStr := ""
+
+		// Usar cookie
+		if cookie, err := c.Cookie("token"); err == nil && cookie != "" {
+			tokenStr = cookie
+		} else if parts := strings.Fields(c.GetHeader("Authorization")); len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+			// Fallback a header Bearer
+			tokenStr = parts[1]
+		}
+
+		if tokenStr == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "No token provided"})
 			return
 		}
 
-		token, err := jwt.Parse(parts[1], func(token *jwt.Token) (any, error) {
+		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
 			return []byte(cfg.JWTSecret), nil
 		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
 		if err != nil || !token.Valid {
@@ -33,35 +41,29 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		claims, ok := token.Claims.(jwt.MapClaims)
-		fmt.Printf("type: %T\n", claims["is_admin"])
-
 		if !ok {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
 			return
 		}
+
 		userID, ok := claims["user_id"].(string)
 		id, err := uuid.Parse(userID)
 		if !ok || err != nil || id == uuid.Nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID in token"})
 			return
 		}
-
 		c.Set("user_id", id.String())
 
 		isAdmin, ok := claims["is_admin"].(bool)
 		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "is_admin missing or invalid",
-			})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "is_admin missing or invalid"})
 			return
 		}
 		c.Set("is_admin", isAdmin)
 
 		userType, ok := claims["user_type"].(string)
 		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error": "user_type missing or invalid",
-			})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "user_type missing or invalid"})
 			return
 		}
 		c.Set("user_type", userType)

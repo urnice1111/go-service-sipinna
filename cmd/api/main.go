@@ -75,6 +75,7 @@ func main() {
 	router.POST("/auth/citizen", handlers.CitizenSignInHandler(pool, cfg))
 	router.POST("/auth/admin", handlers.AdminSignInHandler(pool, cfg))
 	router.POST("/auth/login", handlers.LoginHandler(pool, cfg))
+	router.POST("/auth/logout", handlers.LogoutHandler)
 	router.GET("/auth/me", middleware.AuthMiddleware(cfg), func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"user_id": c.GetString("user_id")})
 	})
