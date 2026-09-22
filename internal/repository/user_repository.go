@@ -166,3 +166,29 @@ func CreateAdmin(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 
 	return user, nil
 }
+
+func ActivateAdminAccount(pool *pgxpool.Pool, adminID uuid.UUID) (string, error) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+
+	defer cancel()
+
+	const query = `
+	UPDATE admins
+	SET estado_cuenta = 'activada'
+	WHERE id = $1
+		AND estado_cuenta = 'pendiente'
+	RETURNING estado_cuenta
+	`
+	var accountStatus string
+	err := pool.QueryRow(ctx, query, adminID).Scan(&accountStatus)
+
+	if err != nil {
+		return "", err
+	}
+
+	return accountStatus, nil
+
+}
