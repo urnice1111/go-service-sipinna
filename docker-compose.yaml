@@ -1,0 +1,13 @@
+services:
+  backend:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/sipinna-server-amd64:latest
+
+    container_name: sipinna-backend
+
+    ports:
+      - "8080:8080"
+
+    env_file:
+      - .env
+
+    restart: unless-stopped
