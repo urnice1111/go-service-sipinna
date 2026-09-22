@@ -166,6 +166,44 @@ func AdminSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc 
 
 }
 
+func AcceptOrRejectAdmin(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !c.GetBool("is_admin") {
+			c.JSON(http.StatusForbidden, gin.H{"error": "admin privileges are required"})
+			return
+		}
+		adminID, err := uuid.Parse(c.Param("id"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid admin id",
+			})
+			return
+		}
+
+		accountStatus, err := repository.ActivateAdminAccount(
+			pool,
+			adminID,
+		)
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "admin not found or account is already deactivated",
+			})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "could not update account status",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"id":            adminID,
+			"estado_cuenta": accountStatus,
+		})
+	}
+}
+
 func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req LoginRequest

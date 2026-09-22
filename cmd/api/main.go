@@ -79,6 +79,7 @@ func main() {
 	router.GET("/auth/me", middleware.AuthMiddleware(cfg), func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"user_id": c.GetString("user_id")})
 	})
+	router.PATCH("/admin/:id/status-accepted", middleware.AuthMiddleware(cfg), handlers.AcceptOrRejectAdmin(pool))
 	router.POST("/upload", handlers.UploadToS3(uploader))
 	router.POST("/report", middleware.AuthMiddleware(cfg), handlers.CreateReportHandler(pool))
 	router.GET("/report", middleware.AuthMiddleware(cfg), handlers.GetUsersReports(pool))
