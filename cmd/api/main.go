@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -57,11 +58,16 @@ func main() {
 		})
 	})
 
+	allowedOrigins := []string{
+		"http://localhost:5173", // Vite
+		"http://localhost:3000", // Create React App
+	}
+	if frontendURL := strings.TrimSpace(cfg.FrontendURL); frontendURL != "" {
+		allowedOrigins = append(allowedOrigins, strings.TrimRight(frontendURL, "/"))
+	}
+
 	router.Use(cors.New(cors.Config{
-		AllowOrigins: []string{
-			"http://localhost:5173", // Vite
-			"http://localhost:3000", // Create React App
-		},
+		AllowOrigins: allowedOrigins,
 		AllowMethods: []string{
 			"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS",
 		},
@@ -81,9 +87,14 @@ func main() {
 	})
 	router.PATCH("/admin/:id/status-accepted", middleware.AuthMiddleware(cfg), handlers.AcceptOrRejectAdmin(pool))
 	router.POST("/upload", handlers.UploadToS3(uploader))
-	router.POST("/report", middleware.AuthMiddleware(cfg), handlers.CreateReportHandler(pool))
-	router.GET("/report", middleware.AuthMiddleware(cfg), handlers.GetUsersReports(pool))
-	router.GET("/report/:zone_id", middleware.AuthMiddleware(cfg), handlers.GetReportsByZone(pool))
+
+	report := router.Group("/report")
+	report.Use(middleware.AuthRequired())
+	{
+		report.POST("", handlers.CreateReportHandler(pool))
+		report.GET("", handlers.GetUsersReports(pool))
+		report.GET("/:zone_id", handlers.GetReportsByZone(pool))
+	}
 
 	router.Run(":" + cfg.Port)
 

@@ -13,6 +13,7 @@ type Config struct {
 	Port          string
 	JWTSecret     string
 	SipinnaBucket string
+	FrontendURL   string
 }
 
 func Load() (*Config, error) {
@@ -23,6 +24,7 @@ func Load() (*Config, error) {
 		Port:          os.Getenv("PORT"),
 		JWTSecret:     os.Getenv("JWT_SECRET"),
 		SipinnaBucket: os.Getenv("SIPINNA_BUCKET"),
+		FrontendURL:   os.Getenv("FRONTEND_URL"),
 	}
 
 	if strings.TrimSpace(config.JWTSecret) == "" {

@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"errors"
 	"go-service-sipinna/internal/config"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -10,41 +12,37 @@ import (
 	"github.com/google/uuid"
 )
 
+func AuthRequired() gin.HandlerFunc {
+	return authRequired(os.Getenv("JWT_SECRET"))
+}
+
 func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
+	if cfg == nil {
+		return authRequired("")
+	}
+	return authRequired(cfg.JWTSecret)
+}
+
+func authRequired(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if strings.TrimSpace(cfg.JWTSecret) == "" {
+		if strings.TrimSpace(jwtSecret) == "" {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "JWT secret is not configured"})
 			return
 		}
 
-		tokenStr := ""
-
-		// Usar cookie
-		if cookie, err := c.Cookie("token"); err == nil && cookie != "" {
-			tokenStr = cookie
-		} else if parts := strings.Fields(c.GetHeader("Authorization")); len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
-			// Fallback a header Bearer
-			tokenStr = parts[1]
-		}
-
-		if tokenStr == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "No token provided"})
+		tokenStr, err := c.Cookie("session_token")
+		if err != nil || tokenStr == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
 
-		token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
-			return []byte(cfg.JWTSecret), nil
-		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
-		if err != nil || !token.Valid {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+		claims, err := validateJWT(tokenStr, jwtSecret)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			return
 		}
 
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims"})
-			return
-		}
+		c.Set("user", claims)
 
 		userID, ok := claims["user_id"].(string)
 		id, err := uuid.Parse(userID)
@@ -70,4 +68,20 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+func validateJWT(tokenStr, jwtSecret string) (jwt.MapClaims, error) {
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
+		return []byte(jwtSecret), nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
+	if err != nil || !token.Valid {
+		return nil, errors.New("invalid or expired token")
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, errors.New("invalid token claims")
+	}
+
+	return claims, nil
 }

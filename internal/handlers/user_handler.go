@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"errors"
-	"fmt"
 	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
@@ -36,14 +35,9 @@ type CreateAdmin struct {
 }
 
 type LoginRequest struct {
-	Email           string `json:"email" binding:"required_without=TelephoneNumber,excluded_with=TelephoneNumber,omitempty,email"`
-	TelephoneNumber string `json:"telefono" binding:"required_without=Email,excluded_with=Email,omitempty,e164"`
-	Password        string `json:"password" binding:"required"`
-}
-
-type AuthResponse struct {
-	Token    string `json:"token"`
-	UserName string `json:"user_name"`
+	Email    *string `json:"email"`
+	Phone    *string `json:"number"`
+	Password string  `json:"password" binding:"required"`
 }
 
 func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
@@ -208,13 +202,16 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req LoginRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 			return
 		}
 
-		fmt.Println(req.Email)
+		if (req.Email == nil) == (req.Phone == nil) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "provide either email or number, not both/neither"})
+			return
+		}
 
-		user, err := repository.GetUserByContact(pool, req.Email, req.TelephoneNumber)
+		user, err := repository.GetUserByContact(pool, stringValue(req.Email), stringValue(req.Phone))
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 			return
@@ -242,8 +239,8 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 }
 
 func LogoutHandler(c *gin.Context) {
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("token", "", -1, "/", "localhost", false, true)
+	c.SetSameSite(http.SameSiteNoneMode)
+	c.SetCookie("session_token", "", -1, "/", "", true, true)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
@@ -258,7 +255,7 @@ func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.
 
 	claims := jwt.MapClaims{
 		"user_id":   userID.String(),
-		"exp":       time.Now().Add(time.Hour).Unix(),
+		"exp":       time.Now().Add(7 * 24 * time.Hour).Unix(),
 		"is_admin":  isAdmin,
 		"user_type": userType,
 	}
@@ -269,10 +266,18 @@ func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.
 		return
 	}
 
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("token", token, 3600, "/", "localhost", false, true)
+	const maxAge = 60 * 60 * 24 * 7
+	c.SetSameSite(http.SameSiteNoneMode)
+	c.SetCookie("session_token", token, maxAge, "/", "", true, true)
 
-	c.JSON(status, AuthResponse{Token: token, UserName: userName})
+	c.JSON(status, gin.H{"name": userName})
+}
+
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
 }
 
 func optionalString(value string) *string {
