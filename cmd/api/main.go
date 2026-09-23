@@ -61,7 +61,7 @@ func main() {
 	allowedOrigins := []string{
 		"http://localhost:5173", // Vite
 		"http://localhost:3000", // Create React App
-		"https://api.sipinna.com/",
+		"https://www.sipinna.com",
 	}
 	if frontendURL := strings.TrimSpace(cfg.FrontendURL); frontendURL != "" {
 		allowedOrigins = append(allowedOrigins, strings.TrimRight(frontendURL, "/"))
