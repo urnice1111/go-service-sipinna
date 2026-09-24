@@ -46,7 +46,7 @@ func GetUserType(
 
 	const query = `	SELECT
 			COALESCE(a.rol::text, 'citizen'),
-			COALESCE(a.rol = 'administrador' AND a.estado_cuenta = 'activada', false)
+			COALESCE(a.rol = 'administrador' OR a.rol = 'alimentador' AND a.estado_cuenta = 'activada', false)
 		FROM usuarios u
 		LEFT JOIN admins a ON a.id = u.id
 		WHERE u.id = $1`
@@ -58,6 +58,7 @@ func GetUserType(
 		return "", false, fmt.Errorf("get user type: %w", err)
 	}
 
+	fmt.Println(isAdmin)
 	return userType, isAdmin, nil
 }
 
