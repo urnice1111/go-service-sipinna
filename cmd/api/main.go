@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -84,9 +85,20 @@ func main() {
 	router.POST("/auth/login", handlers.LoginHandler(pool, cfg))
 	router.POST("/auth/logout", handlers.LogoutHandler)
 	router.GET("/auth/me", middleware.AuthMiddleware(cfg), func(c *gin.Context) {
+		// Tokens emitidos antes de agregar los claims "name"/"zone_name" no los traen; se regresan vacíos.
+		name, zoneName := "", ""
+		if claims, ok := c.Get("user"); ok {
+			if mapClaims, ok := claims.(jwt.MapClaims); ok {
+				name, _ = mapClaims["name"].(string)
+				zoneName, _ = mapClaims["zone_name"].(string)
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"user_id":   c.GetString("user_id"),
 			"user_type": c.GetString("user_type"),
+			"name":      name,
+			"zone_name": zoneName,
 		})
 	})
 	router.PATCH("/admin/:id/status-accepted", middleware.AuthMiddleware(cfg), handlers.AcceptOrRejectAdmin(pool))

@@ -95,7 +95,7 @@ func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFun
 			return
 		}
 
-		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, false, "citizen", "change_later")
+		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, false, "citizen", "change_later", "")
 
 	}
 }
@@ -154,7 +154,7 @@ func AdminSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc 
 			return
 		}
 
-		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, true, req.Role, "change_later")
+		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, true, req.Role, "change_later", "")
 
 	}
 
@@ -222,7 +222,7 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 		}
 
 		// I dunno why i did this, maybe drunk but change later to fetch insnant on previous query
-		userType, isAdmin, err := repository.GetUserType(pool, user.ID)
+		userType, isAdmin, zoneName, err := repository.GetUserType(pool, user.ID)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user type"})
@@ -234,7 +234,7 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		respondWithToken(c, http.StatusOK, user.ID, cfg, isAdmin, userType, user.Name)
+		respondWithToken(c, http.StatusOK, user.ID, cfg, isAdmin, userType, user.Name, zoneName)
 	}
 }
 
@@ -247,7 +247,7 @@ func LogoutHandler(c *gin.Context) {
 
 /*HELPERS*/
 
-func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.Config, isAdmin bool, userType string, userName string) {
+func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.Config, isAdmin bool, userType string, userName string, zoneName string) {
 	if strings.TrimSpace(cfg.JWTSecret) == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT secret is not configured"})
 		return
@@ -258,6 +258,8 @@ func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.
 		"exp":       time.Now().Add(7 * 24 * time.Hour).Unix(),
 		"is_admin":  isAdmin,
 		"user_type": userType,
+		"name":      userName,
+		"zone_name": zoneName,
 	}
 
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(cfg.JWTSecret))
@@ -270,7 +272,7 @@ func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.
 	c.SetSameSite(http.SameSiteNoneMode)
 	c.SetCookie("session_token", token, maxAge, "/", "", true, true)
 
-	c.JSON(status, gin.H{"name": userName, "user_type": userType})
+	c.JSON(status, gin.H{"name": userName, "user_type": userType, "zone_name": zoneName})
 }
 
 func stringValue(value *string) string {

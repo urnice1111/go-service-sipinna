@@ -64,28 +64,32 @@ func GetUserByContact(pool *pgxpool.Pool, email, telephoneNumber string) (*model
 	return &user, nil
 }
 
+// GetUserType también regresa el nombre de la zona asignada; vacío para ciudadanos o staff sin zona.
 func GetUserType(
 	pool *pgxpool.Pool,
-	userID uuid.UUID) (string, bool, error) {
+	userID uuid.UUID) (string, bool, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	const query = `	SELECT
 			COALESCE(a.rol::text, 'citizen'),
-			COALESCE(a.rol = 'administrador' OR a.rol = 'alimentador' AND a.estado_cuenta = 'activada', false)
+			COALESCE(a.rol = 'administrador' OR a.rol = 'alimentador' AND a.estado_cuenta = 'activada', false),
+			COALESCE(z.nombre, '')
 		FROM usuarios u
 		LEFT JOIN admins a ON a.id = u.id
+		LEFT JOIN zonas z ON z.id = a.zona_id
 		WHERE u.id = $1`
 
 	var userType string
 	var isAdmin bool
+	var zoneName string
 
-	if err := pool.QueryRow(ctx, query, userID).Scan(&userType, &isAdmin); err != nil {
-		return "", false, fmt.Errorf("get user type: %w", err)
+	if err := pool.QueryRow(ctx, query, userID).Scan(&userType, &isAdmin, &zoneName); err != nil {
+		return "", false, "", fmt.Errorf("get user type: %w", err)
 	}
 
 	fmt.Println(isAdmin)
-	return userType, isAdmin, nil
+	return userType, isAdmin, zoneName, nil
 }
 
 func CreateUser(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
