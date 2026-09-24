@@ -1,0 +1,19 @@
+CREATE OR REPLACE FUNCTION set_first_status_for_report()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO historial_estados (reporte_id, estado, motivo)
+    VALUES (NEW.id,'Reporte recibido', 'Reporte recien creado');
+
+    RETURN NULL;  -- ignored for AFTER triggers
+END;
+$$ LANGUAGE plpgsql;
+
+ALTER TABLE "historial_estados" ALTER COLUMN "estado" DROP NOT NULL;
+ALTER TABLE "historial_estados" ALTER COLUMN "estado" TYPE varchar USING "estado"::text;
+
+ALTER TABLE "reportes" ALTER COLUMN "estado" DROP NOT NULL;
+ALTER TABLE "reportes" ALTER COLUMN "estado" DROP DEFAULT;
+ALTER TABLE "reportes" ALTER COLUMN "estado" TYPE varchar USING "estado"::text;
+ALTER TABLE "reportes" ALTER COLUMN "estado" SET DEFAULT 'pendiente';
+
+DROP TYPE IF EXISTS report_status;
