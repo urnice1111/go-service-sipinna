@@ -84,7 +84,10 @@ func main() {
 	router.POST("/auth/login", handlers.LoginHandler(pool, cfg))
 	router.POST("/auth/logout", handlers.LogoutHandler)
 	router.GET("/auth/me", middleware.AuthMiddleware(cfg), func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"user_id": c.GetString("user_id")})
+		c.JSON(http.StatusOK, gin.H{
+			"user_id":   c.GetString("user_id"),
+			"user_type": c.GetString("user_type"),
+		})
 	})
 	router.PATCH("/admin/:id/status-accepted", middleware.AuthMiddleware(cfg), handlers.AcceptOrRejectAdmin(pool))
 	router.POST("/upload", handlers.UploadToS3(uploader))
@@ -95,6 +98,7 @@ func main() {
 		report.POST("", handlers.CreateReportHandler(pool))
 		report.GET("", handlers.GetUsersReports(pool))
 		report.GET("/:zone_id", handlers.GetReportsByZone(pool))
+		report.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))
 	}
 
 	router.Run(":" + cfg.Port)

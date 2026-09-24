@@ -16,6 +16,32 @@ type UserType struct {
 	UserType string
 }
 
+// StaffAccess is an admins row with an activated account ('administrador' or 'alimentador').
+type StaffAccess struct {
+	Role   string
+	ZoneID *uuid.UUID
+}
+
+// GetActiveStaff returns pgx.ErrNoRows when the user is not in admins or its account is not activated.
+func GetActiveStaff(pool *pgxpool.Pool, userID uuid.UUID) (*StaffAccess, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const query = `
+		SELECT rol::text, zona_id
+		FROM admins
+		WHERE id = $1
+			AND estado_cuenta = 'activada'
+	`
+
+	var staff StaffAccess
+	if err := pool.QueryRow(ctx, query, userID).Scan(&staff.Role, &staff.ZoneID); err != nil {
+		return nil, err
+	}
+
+	return &staff, nil
+}
+
 // GetUserByContact looks up credentials using either an email or a telephone number.
 func GetUserByContact(pool *pgxpool.Pool, email, telephoneNumber string) (*models.User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

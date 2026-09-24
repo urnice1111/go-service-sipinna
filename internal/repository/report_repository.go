@@ -6,6 +6,7 @@ import (
 	"go-service-sipinna/internal/models"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -140,7 +141,9 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ps []string, ciudadanoID
 
 }
 
-func GetReportsByZone(pool *pgxpool.Pool, zoneID string) ([]models.IndividualReport, error) {
+// GetReportsByZone filters by zone id or municipio. scopeZoneID, when not nil, also
+// restricts the result to that zone (used for 'alimentador' users).
+func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID) ([]models.IndividualReport, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
@@ -159,28 +162,26 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string) ([]models.IndividualRep
 		r.edad_ninos,
 		z.nombre AS nombre_zona,
 		u.nombre AS nombre_ciudadano,
-		he.estado AS ultimo_estado,
-		he.changed_at AS estado_changed_at
+		r.estado::text AS ultimo_estado,
+		COALESCE(he.changed_at, r.created_at) AS estado_changed_at
 	FROM reportes AS r
 	INNER JOIN zonas AS z
 		ON r.zona_id = z.id
 	INNER JOIN usuarios AS u
 		ON r.ciudadano_id = u.id
 	LEFT JOIN LATERAL (
-		SELECT
-			h.estado,
-			h.changed_at
+		SELECT h.changed_at
 		FROM historial_estados AS h
 		WHERE h.reporte_id = r.id
 		ORDER BY h.changed_at DESC, h.id DESC
 		LIMIT 1
 	) AS he ON TRUE
 	WHERE
-		r.zona_id::text = $1
-		OR UPPER(z.municipio) = UPPER($1);
+		(r.zona_id::text = $1 OR UPPER(z.municipio) = UPPER($1))
+		AND ($2::uuid IS NULL OR r.zona_id = $2);
 	`
 
-	rows, err := pool.Query(ctx, queryGetReports, zoneID)
+	rows, err := pool.Query(ctx, queryGetReports, zoneID, scopeZoneID)
 
 	if err != nil {
 		return nil, err
@@ -226,17 +227,14 @@ func GetReportsSummaryOfUser(pool *pgxpool.Pool, userID string) ([]models.Indivi
 	defer cancel()
 
 	var query = `
-	select r.folio, h.estado, r.latitud, r.longitud, r.descripcion 
-	from reportes r
-		inner join historial_estados h 
-		on r.id = h.reporte_id
-		inner join
-		(
-			select reporte_id, MAX(changed_at) maxDate
-			from historial_estados
-			group by reporte_id
-		) b on r.id = b.reporte_id and h.changed_at = b.maxDate
-	where r.ciudadano_id = $1;
+	SELECT
+		r.folio,
+		r.estado::text AS report_state,
+		r.latitud,
+		r.longitud,
+		r.descripcion
+	FROM reportes AS r
+	WHERE r.ciudadano_id = $1;
 	`
 
 	rows, err := pool.Query(ctx, query, userID)
@@ -271,4 +269,73 @@ func GetReportsSummaryOfUser(pool *pgxpool.Pool, userID string) ([]models.Indivi
 
 	return AllReportsSummary, nil
 
+}
+
+var ErrSameReportStatus = errors.New("report already has that status")
+
+// UpdateReportStatus changes reportes.estado. The historial_estados row is written by the
+// log_report_status_change trigger, which reads app.admin_id and app.motivo from this
+// transaction. Returns pgx.ErrNoRows when the folio does not exist or is outside scopeZoneID.
+func UpdateReportStatus(
+	pool *pgxpool.Pool,
+	folio string,
+	status string,
+	reason string,
+	adminID uuid.UUID,
+	scopeZoneID *uuid.UUID,
+) (time.Time, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	const queryCurrentStatus = `
+		SELECT estado::text
+		FROM reportes
+		WHERE folio = $1
+			AND ($2::uuid IS NULL OR zona_id = $2)
+		FOR UPDATE
+	`
+
+	var currentStatus string
+	if err := tx.QueryRow(ctx, queryCurrentStatus, folio, scopeZoneID).Scan(&currentStatus); err != nil {
+		return time.Time{}, err
+	}
+
+	if currentStatus == status {
+		return time.Time{}, ErrSameReportStatus
+	}
+
+	const querySetContext = `
+		SELECT
+			set_config('app.admin_id', $1, true),
+			set_config('app.motivo', $2, true)
+	`
+
+	if _, err := tx.Exec(ctx, querySetContext, adminID.String(), reason); err != nil {
+		return time.Time{}, err
+	}
+
+	const queryUpdateStatus = `
+		UPDATE reportes
+		SET estado = $1::report_status,
+			updated_at = CURRENT_TIMESTAMP
+		WHERE folio = $2
+		RETURNING updated_at
+	`
+
+	var changedAt time.Time
+	if err := tx.QueryRow(ctx, queryUpdateStatus, status, folio).Scan(&changedAt); err != nil {
+		return time.Time{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return time.Time{}, err
+	}
+
+	return changedAt, nil
 }

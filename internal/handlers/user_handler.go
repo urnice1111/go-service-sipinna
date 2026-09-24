@@ -270,7 +270,7 @@ func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.
 	c.SetSameSite(http.SameSiteNoneMode)
 	c.SetCookie("session_token", token, maxAge, "/", "", true, true)
 
-	c.JSON(status, gin.H{"name": userName})
+	c.JSON(status, gin.H{"name": userName, "user_type": userType})
 }
 
 func stringValue(value *string) string {

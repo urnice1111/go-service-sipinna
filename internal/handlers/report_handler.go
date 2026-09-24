@@ -1,13 +1,16 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -77,12 +80,8 @@ func GetReportsByZone(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var zoneID string = c.Param("zone_id")
 
-		isAdmin := c.GetBool("is_admin")
-
-		fmt.Println(isAdmin)
-
-		if !isAdmin {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Not admin"})
+		_, scopeZoneID, ok := requireActiveStaff(c, pool)
+		if !ok {
 			return
 		}
 
@@ -94,7 +93,7 @@ func GetReportsByZone(pool *pgxpool.Pool) gin.HandlerFunc {
 		var err error
 		var reports []models.IndividualReport
 
-		reports, err = repository.GetReportsByZone(pool, zoneID)
+		reports, err = repository.GetReportsByZone(pool, zoneID, scopeZoneID)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -118,11 +117,115 @@ func GetUsersReports(pool *pgxpool.Pool) gin.HandlerFunc {
 		reportsBrief, err := repository.GetReportsSummaryOfUser(pool, userID)
 
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
 		c.JSON(http.StatusOK, gin.H{"reports": reportsBrief})
 
 	}
+}
+
+type UpdateReportStatusRequest struct {
+	Status string `json:"estado" binding:"required"`
+	Reason string `json:"motivo"`
+}
+
+var validReportStatuses = map[string]bool{
+	"registrado":     true,
+	"en_revision":    true,
+	"en_seguimiento": true,
+	"canalizado":     true,
+	"concluido":      true,
+	"archivado":      true,
+	"cancelado":      true,
+	"reincidente":    true,
+}
+
+var reportStatusesRequiringReason = map[string]bool{
+	"cancelado":   true,
+	"archivado":   true,
+	"reincidente": true,
+}
+
+func UpdateReportStatusHandler(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		staffID, scopeZoneID, ok := requireActiveStaff(c, pool)
+		if !ok {
+			return
+		}
+
+		folio := strings.TrimSpace(c.Param("folio"))
+
+		var req UpdateReportStatusRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		req.Status = strings.TrimSpace(req.Status)
+		req.Reason = strings.TrimSpace(req.Reason)
+
+		if !validReportStatuses[req.Status] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid estado"})
+			return
+		}
+
+		if reportStatusesRequiringReason[req.Status] && req.Reason == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "motivo is required for estado " + req.Status})
+			return
+		}
+
+		changedAt, err := repository.UpdateReportStatus(pool, folio, req.Status, req.Reason, staffID, scopeZoneID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
+			return
+		}
+		if errors.Is(err, repository.ErrSameReportStatus) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not update report status"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"folio":            folio,
+			"estado":           req.Status,
+			"state_changed_at": changedAt,
+		})
+	}
+}
+
+// requireActiveStaff checks against the db that the user is an activated 'administrador' or
+// 'alimentador'. It returns the user id and the zone the user is restricted to (nil for
+// 'administrador'). When it returns false the error response has already been written.
+func requireActiveStaff(c *gin.Context, pool *pgxpool.Pool) (uuid.UUID, *uuid.UUID, bool) {
+	userID, err := uuid.Parse(c.GetString("user_id"))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user id"})
+		return uuid.Nil, nil, false
+	}
+
+	staff, err := repository.GetActiveStaff(pool, userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "an activated administrador or alimentador account is required"})
+		return uuid.Nil, nil, false
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify user permissions"})
+		return uuid.Nil, nil, false
+	}
+
+	if staff.Role == "administrador" {
+		return userID, nil, true
+	}
+
+	if staff.ZoneID == nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "alimentador has no zone assigned"})
+		return uuid.Nil, nil, false
+	}
+
+	return userID, staff.ZoneID, true
 }
