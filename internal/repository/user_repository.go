@@ -40,28 +40,26 @@ func GetUserByContact(pool *pgxpool.Pool, email, telephoneNumber string) (*model
 
 func GetUserType(
 	pool *pgxpool.Pool,
-	userID uuid.UUID,
-) (string, error) {
+	userID uuid.UUID) (string, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	const query = `
-		SELECT COALESCE(
-			(SELECT rol::text
-			 FROM admins
-			 WHERE id = $1
-			 LIMIT 1),
-			'citizen'
-		)
-	`
+	const query = `	SELECT
+			COALESCE(a.rol::text, 'citizen'),
+			COALESCE(a.rol = 'administrador' OR a.rol = 'alimentador' AND a.estado_cuenta = 'activada', false)
+		FROM usuarios u
+		LEFT JOIN admins a ON a.id = u.id
+		WHERE u.id = $1`
 
 	var userType string
+	var isAdmin bool
 
-	if err := pool.QueryRow(ctx, query, userID).Scan(&userType); err != nil {
-		return "", fmt.Errorf("get user type: %w", err)
+	if err := pool.QueryRow(ctx, query, userID).Scan(&userType, &isAdmin); err != nil {
+		return "", false, fmt.Errorf("get user type: %w", err)
 	}
 
-	return userType, nil
+	fmt.Println(isAdmin)
+	return userType, isAdmin, nil
 }
 
 func CreateUser(pool *pgxpool.Pool, user *models.User) (*models.User, error) {

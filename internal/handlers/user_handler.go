@@ -222,7 +222,7 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 		}
 
 		// I dunno why i did this, maybe drunk but change later to fetch insnant on previous query
-		userType, err := repository.GetUserType(pool, user.ID)
+		userType, isAdmin, err := repository.GetUserType(pool, user.ID)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user type"})
@@ -234,7 +234,7 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		respondWithToken(c, http.StatusOK, user.ID, cfg, false, userType, user.Name)
+		respondWithToken(c, http.StatusOK, user.ID, cfg, isAdmin, userType, user.Name)
 	}
 }
 
