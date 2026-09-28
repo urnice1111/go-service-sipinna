@@ -339,3 +339,155 @@ func UpdateReportStatus(
 
 	return changedAt, nil
 }
+
+// GetReportByFolio returns pgx.ErrNoRows when the folio does not exist or is outside scopeZoneID.
+func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) (*models.ReportDetail, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const queryGetReport = `
+	SELECT
+		r.id,
+		r.folio,
+		r.descripcion,
+		r.latitud,
+		r.longitud,
+		r.cantidad_ninos,
+		r.tipo_trabajo,
+		r.created_at,
+		r.sospechoso,
+		r.edad_ninos,
+		z.nombre AS nombre_zona,
+		u.nombre AS nombre_ciudadano,
+		r.estado::text AS ultimo_estado,
+		COALESCE(he.changed_at, r.created_at) AS estado_changed_at,
+		COALESCE(r.horario_avistamiento, '') AS horario_avistamiento
+	FROM reportes AS r
+	INNER JOIN zonas AS z
+		ON r.zona_id = z.id
+	INNER JOIN usuarios AS u
+		ON r.ciudadano_id = u.id
+	LEFT JOIN LATERAL (
+		SELECT h.changed_at
+		FROM historial_estados AS h
+		WHERE h.reporte_id = r.id
+		ORDER BY h.changed_at DESC, h.id DESC
+		LIMIT 1
+	) AS he ON TRUE
+	WHERE r.folio = $1
+		AND ($2::uuid IS NULL OR r.zona_id = $2);
+	`
+
+	var reportID uuid.UUID
+	var rd models.ReportDetail
+	err := pool.QueryRow(ctx, queryGetReport, folio, scopeZoneID).Scan(
+		&reportID,
+		&rd.Folio,
+		&rd.Description,
+		&rd.Latitude,
+		&rd.Longitude,
+		&rd.ChildrenQuantity,
+		&rd.WorkType,
+		&rd.CreatedtAt,
+		&rd.SuspiciusLevel,
+		&rd.ChildrenAge,
+		&rd.ZoneName,
+		&rd.CitizenName,
+		&rd.LastState,
+		&rd.StateChangedAt,
+		&rd.SightingTime,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	const queryImages = `
+	SELECT url
+	FROM imagenes_reporte
+	WHERE reporte_id = $1
+	ORDER BY orden NULLS LAST, url;
+	`
+
+	rows, err := pool.Query(ctx, queryImages, reportID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	rd.Images = []string{}
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			return nil, err
+		}
+		rd.Images = append(rd.Images, url)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &rd, nil
+}
+
+// DeleteReport removes the report and its rows in imagenes_reporte, comentarios and
+// historial_estados (there are no FKs with ON DELETE CASCADE). Returns the image urls so
+// the caller can remove them from S3. Returns pgx.ErrNoRows when the folio does not exist
+// or is outside scopeZoneID.
+func DeleteReport(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	const queryLockReport = `
+		SELECT id
+		FROM reportes
+		WHERE folio = $1
+			AND ($2::uuid IS NULL OR zona_id = $2)
+		FOR UPDATE
+	`
+
+	var reportID uuid.UUID
+	if err := tx.QueryRow(ctx, queryLockReport, folio, scopeZoneID).Scan(&reportID); err != nil {
+		return nil, err
+	}
+
+	rows, err := tx.Query(ctx, `DELETE FROM imagenes_reporte WHERE reporte_id = $1 RETURNING url`, reportID)
+	if err != nil {
+		return nil, err
+	}
+	imageURLs := []string{}
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		imageURLs = append(imageURLs, url)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM comentarios WHERE reporte_id = $1`, reportID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM historial_estados WHERE reporte_id = $1`, reportID); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM reportes WHERE id = $1`, reportID); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return imageURLs, nil
+}

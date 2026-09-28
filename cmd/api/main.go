@@ -109,8 +109,10 @@ func main() {
 	{
 		report.POST("", handlers.CreateReportHandler(pool))
 		report.GET("", handlers.GetUsersReports(pool))
-		report.GET("/:zone_id", handlers.GetReportsByZone(pool))
+		report.GET("/zone/:zone_id", handlers.GetReportsByZone(pool))
+		report.GET("/:folio", handlers.GetReportByFolioHandler(pool))
 		report.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))
+		report.DELETE("/:folio", handlers.DeleteReportHandler(pool))
 	}
 
 	router.Run(":" + cfg.Port)
