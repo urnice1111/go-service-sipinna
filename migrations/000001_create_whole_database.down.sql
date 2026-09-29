@@ -1,16 +1,21 @@
-DROP TABLE IF EXISTS otp_verificaciones;
-DROP TABLE IF EXISTS imagenes_reporte;
-DROP TABLE IF EXISTS comentarios;
+BEGIN;
+
 DROP TABLE IF EXISTS historial_estados;
+DROP TABLE IF EXISTS comentarios;
+DROP TABLE IF EXISTS imagenes_reporte;
 DROP TABLE IF EXISTS reportes;
-DROP TABLE IF EXISTS casos;
-DROP TABLE IF EXISTS ciudadanos;
+DROP TABLE IF EXISTS otp_verificaciones;
 DROP TABLE IF EXISTS admins;
+DROP TABLE IF EXISTS ciudadanos;
 DROP TABLE IF EXISTS usuarios;
+DROP TABLE IF EXISTS casos;
 DROP TABLE IF EXISTS zonas;
 
-DROP TYPE IF EXISTS account_status;
-DROP TYPE IF EXISTS admin_role;
-
-
 DROP SEQUENCE IF EXISTS reportes_folio_seq;
+
+DROP FUNCTION IF EXISTS set_updated_at();
+
+DROP TYPE IF EXISTS admin_role;
+DROP TYPE IF EXISTS account_status;
+
+COMMIT;
