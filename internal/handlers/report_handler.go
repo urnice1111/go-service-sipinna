@@ -229,3 +229,57 @@ func requireActiveStaff(c *gin.Context, pool *pgxpool.Pool) (uuid.UUID, *uuid.UU
 
 	return userID, staff.ZoneID, true
 }
+
+func GetReportByFolioHandler(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		_, scopeZoneID, ok := requireActiveStaff(c, pool)
+		if !ok {
+			return
+		}
+
+		folio := strings.TrimSpace(c.Param("folio"))
+		if folio == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "you must provide a folio"})
+			return
+		}
+
+		report, err := repository.GetReportByFolio(pool, folio, scopeZoneID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get report"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"report": report})
+	}
+}
+
+func DeleteReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		_, scopeZoneID, ok := requireActiveStaff(c, pool)
+		if !ok {
+			return
+		}
+
+		folio := strings.TrimSpace(c.Param("folio"))
+		if folio == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "you must provide a folio"})
+			return
+		}
+
+		_, err := repository.DeleteReport(pool, folio, scopeZoneID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete report"})
+			return
+		}
+
+		c.Status(http.StatusNoContent)
+	}
+}

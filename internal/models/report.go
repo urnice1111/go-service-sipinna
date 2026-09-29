@@ -50,3 +50,9 @@ type IndividualReportInfoBrief struct {
 	Longitude   float32 `json:"longitude" db:"longitud"`
 	Description string  `json:"description" db:"description"`
 }
+
+type ReportDetail struct {
+	IndividualReport
+	SightingTime string   `json:"sighting_time"`
+	Images       []string `json:"images"`
+}
