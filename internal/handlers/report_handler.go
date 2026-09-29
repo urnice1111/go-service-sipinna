@@ -15,14 +15,13 @@ import (
 )
 
 type CreateReport struct {
-	Description      string   `json:"description" db:"descripcion"`
-	Latitude         float32  `json:"latitude" db:"latitud"`
-	Longitude        float32  `json:"longitude" db:"longitud"`
-	ChildrenQuantity int      `json:"children_quantity" db:"cantidad_ninos"`
-	ChildrenAge      string   `json:"children_age" db:"edad_ninos"`
-	WorkType         string   `json:"work_type" db:"tipo_trabajo"`
-	SightingTime     string   `json:"sighting_time" db:"horario_avistamiento"`
-	Photos           []string `json:"photos,omitempty"`
+	Description      string  `json:"description" db:"descripcion"`
+	Latitude         float32 `json:"latitude" db:"latitud"`
+	Longitude        float32 `json:"longitude" db:"longitud"`
+	ChildrenQuantity int     `json:"children_quantity" db:"cantidad_ninos"`
+	ChildrenAge      string  `json:"children_age" db:"edad_ninos"`
+	WorkType         string  `json:"work_type" db:"tipo_trabajo"`
+	SightingTime     string  `json:"sighting_time" db:"horario_avistamiento"`
 }
 
 func CreateReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
@@ -39,10 +38,6 @@ func CreateReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		var req CreateReport
 		if err := c.BindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		}
-
-		if req.Photos == nil {
-			req.Photos = []string{}
 		}
 
 		idV7, err := uuid.NewV7()
@@ -63,14 +58,14 @@ func CreateReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			SightingTime:     req.SightingTime,
 		}
 
-		newReport, err := repository.CreateReport(pool, report, req.Photos, &userID)
+		newReport, err := repository.CreateReport(pool, report, &userID)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"reporte": newReport})
+		c.JSON(http.StatusOK, gin.H{"reporte_id": newReport.ID})
 
 	}
 
