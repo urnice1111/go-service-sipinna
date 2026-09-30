@@ -19,7 +19,7 @@ type Report struct {
 	SightingTime     string     `json:"sighting_time" db:"horario_avistamiento"`
 	ZoneID           uuid.UUID  `json:"zone_id" db:"zona_id"`
 	CasoID           uuid.UUID  `json:"case_id" db:"caso_id"`
-	State            string     `json:"state" db:"estado"`
+	State            string     `json:"state" db:"-"`
 	SuspiciusLevel   float64    `json:"suspicius_level" db:"sospechoso"`
 	LLMAnalizedAt    time.Time  `json:"llm_analized_at" db:"llm_analizado_at"`
 	DeleteDate       time.Time  `json:"delete_date" db:"fecha_eliminacion_programada"`
