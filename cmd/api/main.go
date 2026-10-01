@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"go-service-sipinna/internal/analysis"
 	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/database"
 	"go-service-sipinna/internal/handlers"
@@ -47,6 +49,10 @@ func main() {
 	}
 
 	defer pool.Close()
+
+	// Analiza en segundo plano qué tan probable es que cada reporte nuevo sea falso
+	// y guarda el resultado en la columna "sospechoso" (0 = legítimo, 1 = falso).
+	go analysis.NewWorker(pool, analysis.NewJevClient(cfg.TypeSafeAPIKey)).Run(context.Background())
 
 	var router *gin.Engine = gin.Default()
 	router.SetTrustedProxies(nil)
