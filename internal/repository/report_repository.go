@@ -137,7 +137,7 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID)
 		r.edad_ninos,
 		z.nombre AS nombre_zona,
 		u.nombre AS nombre_ciudadano,
-		r.estado::text AS ultimo_estado,
+		COALESCE(he.estado::text, 'DRAFT') AS ultimo_estado,
 		COALESCE(he.changed_at, r.created_at) AS estado_changed_at
 	FROM reportes AS r
 	INNER JOIN zonas AS z
@@ -145,7 +145,7 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID)
 	INNER JOIN usuarios AS u
 		ON r.ciudadano_id = u.id
 	LEFT JOIN LATERAL (
-		SELECT h.changed_at
+		SELECT h.estado, h.changed_at
 		FROM historial_estados AS h
 		WHERE h.reporte_id = r.id
 		ORDER BY h.changed_at DESC, h.id DESC
@@ -204,11 +204,18 @@ func GetReportsSummaryOfUser(pool *pgxpool.Pool, userID string) ([]models.Indivi
 	var query = `
 	SELECT
 		r.folio,
-		r.estado::text AS report_state,
+		COALESCE(he.estado::text, 'DRAFT') AS report_state,
 		r.latitud,
 		r.longitud,
 		r.descripcion
 	FROM reportes AS r
+	LEFT JOIN LATERAL (
+		SELECT h.estado
+		FROM historial_estados AS h
+		WHERE h.reporte_id = r.id
+		ORDER BY h.changed_at DESC, h.id DESC
+		LIMIT 1
+	) AS he ON TRUE
 	WHERE r.ciudadano_id = $1;
 	`
 
@@ -248,9 +255,9 @@ func GetReportsSummaryOfUser(pool *pgxpool.Pool, userID string) ([]models.Indivi
 
 var ErrSameReportStatus = errors.New("report already has that status")
 
-// UpdateReportStatus changes reportes.estado. The historial_estados row is written by the
-// log_report_status_change trigger, which reads app.admin_id and app.motivo from this
-// transaction. Returns pgx.ErrNoRows when the folio does not exist or is outside scopeZoneID.
+// UpdateReportStatus inserts a new row in historial_estados; the current status of a report
+// is its most recent historial_estados row. Returns pgx.ErrNoRows when the folio does not
+// exist or is outside scopeZoneID.
 func UpdateReportStatus(
 	pool *pgxpool.Pool,
 	folio string,
@@ -268,16 +275,25 @@ func UpdateReportStatus(
 	}
 	defer tx.Rollback(ctx)
 
+	// Locking the reportes row serializes concurrent status changes on the same report.
 	const queryCurrentStatus = `
-		SELECT estado::text
-		FROM reportes
-		WHERE folio = $1
-			AND ($2::uuid IS NULL OR zona_id = $2)
-		FOR UPDATE
+		SELECT r.id, COALESCE(he.estado::text, 'DRAFT')
+		FROM reportes AS r
+		LEFT JOIN LATERAL (
+			SELECT h.estado
+			FROM historial_estados AS h
+			WHERE h.reporte_id = r.id
+			ORDER BY h.changed_at DESC, h.id DESC
+			LIMIT 1
+		) AS he ON TRUE
+		WHERE r.folio = $1
+			AND ($2::uuid IS NULL OR r.zona_id = $2)
+		FOR UPDATE OF r
 	`
 
+	var reportID uuid.UUID
 	var currentStatus string
-	if err := tx.QueryRow(ctx, queryCurrentStatus, folio, scopeZoneID).Scan(&currentStatus); err != nil {
+	if err := tx.QueryRow(ctx, queryCurrentStatus, folio, scopeZoneID).Scan(&reportID, &currentStatus); err != nil {
 		return time.Time{}, err
 	}
 
@@ -285,26 +301,18 @@ func UpdateReportStatus(
 		return time.Time{}, ErrSameReportStatus
 	}
 
-	const querySetContext = `
-		SELECT
-			set_config('app.admin_id', $1, true),
-			set_config('app.motivo', $2, true)
-	`
-
-	if _, err := tx.Exec(ctx, querySetContext, adminID.String(), reason); err != nil {
-		return time.Time{}, err
-	}
-
-	const queryUpdateStatus = `
-		UPDATE reportes
-		SET estado = $1::report_status,
-			updated_at = CURRENT_TIMESTAMP
-		WHERE folio = $2
-		RETURNING updated_at
+	const queryInsertStatus = `
+		INSERT INTO historial_estados (reporte_id, estado, cambiado_por, motivo)
+		VALUES ($1, $2::report_status, $3, NULLIF($4, ''))
+		RETURNING changed_at
 	`
 
 	var changedAt time.Time
-	if err := tx.QueryRow(ctx, queryUpdateStatus, status, folio).Scan(&changedAt); err != nil {
+	if err := tx.QueryRow(ctx, queryInsertStatus, reportID, status, adminID, reason).Scan(&changedAt); err != nil {
+		return time.Time{}, err
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE reportes SET updated_at = $1 WHERE id = $2`, changedAt, reportID); err != nil {
 		return time.Time{}, err
 	}
 
@@ -334,7 +342,7 @@ func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) 
 		r.edad_ninos,
 		z.nombre AS nombre_zona,
 		u.nombre AS nombre_ciudadano,
-		r.estado::text AS ultimo_estado,
+		COALESCE(he.estado::text, 'DRAFT') AS ultimo_estado,
 		COALESCE(he.changed_at, r.created_at) AS estado_changed_at,
 		COALESCE(r.horario_avistamiento, '') AS horario_avistamiento
 	FROM reportes AS r
@@ -343,7 +351,7 @@ func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) 
 	INNER JOIN usuarios AS u
 		ON r.ciudadano_id = u.id
 	LEFT JOIN LATERAL (
-		SELECT h.changed_at
+		SELECT h.estado, h.changed_at
 		FROM historial_estados AS h
 		WHERE h.reporte_id = r.id
 		ORDER BY h.changed_at DESC, h.id DESC

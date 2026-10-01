@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_historial_reporte_changed;
