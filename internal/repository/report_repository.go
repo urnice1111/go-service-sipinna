@@ -116,7 +116,7 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string) (*m
 
 }
 
-// GetReportsByZone filters by zone id or municipio. scopeZoneID, when not nil, also
+// GetReportsByZone filters by zone id or municipio; an empty zoneID returns every zone. scopeZoneID, when not nil, also
 // restricts the result to that zone (used for 'alimentador' users).
 func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID) ([]models.IndividualReport, error) {
 
@@ -136,13 +136,14 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID)
 		COALESCE(r.sospechoso, 0) AS sospechoso,
 		r.edad_ninos,
 		z.nombre AS nombre_zona,
-		u.nombre AS nombre_ciudadano,
+		COALESCE(u.nombre, '') AS nombre_ciudadano,
 		COALESCE(he.estado::text, 'DRAFT') AS ultimo_estado,
 		COALESCE(he.changed_at, r.created_at) AS estado_changed_at
 	FROM reportes AS r
 	INNER JOIN zonas AS z
 		ON r.zona_id = z.id
-	INNER JOIN usuarios AS u
+	-- LEFT: ciudadano_id queda en NULL si se borra el ciudadano (ON DELETE SET NULL).
+	LEFT JOIN usuarios AS u
 		ON r.ciudadano_id = u.id
 	LEFT JOIN LATERAL (
 		SELECT h.estado, h.changed_at
@@ -152,7 +153,7 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID)
 		LIMIT 1
 	) AS he ON TRUE
 	WHERE
-		(r.zona_id::text = $1 OR UPPER(z.municipio) = UPPER($1))
+		($1 = '' OR r.zona_id::text = $1 OR UPPER(z.municipio) = UPPER($1))
 		AND ($2::uuid IS NULL OR r.zona_id = $2);
 	`
 
@@ -341,14 +342,14 @@ func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) 
 		r.sospechoso,
 		r.edad_ninos,
 		z.nombre AS nombre_zona,
-		u.nombre AS nombre_ciudadano,
+		COALESCE(u.nombre, '') AS nombre_ciudadano,
 		COALESCE(he.estado::text, 'DRAFT') AS ultimo_estado,
 		COALESCE(he.changed_at, r.created_at) AS estado_changed_at,
 		COALESCE(r.horario_avistamiento, '') AS horario_avistamiento
 	FROM reportes AS r
 	INNER JOIN zonas AS z
 		ON r.zona_id = z.id
-	INNER JOIN usuarios AS u
+	LEFT JOIN usuarios AS u
 		ON r.ciudadano_id = u.id
 	LEFT JOIN LATERAL (
 		SELECT h.estado, h.changed_at
@@ -526,7 +527,6 @@ func WriteImages(pool *pgxpool.Pool, reportID string, images_url models.ImagesRe
 }
 
 // ======= Helpers
-
 func generateUniqueFilename(ext string) string {
 
 	randomBytes := make([]byte, 8)

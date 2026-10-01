@@ -132,6 +132,24 @@ func GetReportsByZone(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+// GetAllReports returns every report to 'administrador' and 'alimentador' only gets its assigned zone.
+func GetAllReports(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		_, scopeZoneID, ok := requireActiveStaff(c, pool)
+		if !ok {
+			return
+		}
+
+		reports, err := repository.GetReportsByZone(pool, "", scopeZoneID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"reports": reports})
+	}
+}
+
 func GetUsersReports(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString("user_id")
