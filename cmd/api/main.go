@@ -102,12 +102,14 @@ func main() {
 		})
 	})
 	router.PATCH("/admin/:id/status-accepted", middleware.AuthMiddleware(cfg), handlers.AcceptOrRejectAdmin(pool))
+	router.GET("/zones", middleware.AuthRequired(), handlers.GetZones(pool))
 
 	report := router.Group("/report")
 	report.Use(middleware.AuthRequired())
 	{
 		report.POST("", handlers.CreateReportHandler(pool))
 		report.GET("", handlers.GetUsersReports(pool))
+		report.GET("/all", handlers.GetAllReports(pool))
 		report.GET("/zone/:zone_id", handlers.GetReportsByZone(pool))
 		report.GET("/:folio", handlers.GetReportByFolioHandler(pool))
 		report.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))
