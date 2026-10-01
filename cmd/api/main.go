@@ -108,17 +108,21 @@ func main() {
 		})
 	})
 	router.PATCH("/admin/:id/status-accepted", middleware.AuthMiddleware(cfg), handlers.AcceptOrRejectAdmin(pool))
-	router.POST("/upload", handlers.UploadToS3(uploader))
+	router.GET("/zones", middleware.AuthRequired(), handlers.GetZones(pool))
 
 	report := router.Group("/report")
 	report.Use(middleware.AuthRequired())
 	{
 		report.POST("", handlers.CreateReportHandler(pool))
 		report.GET("", handlers.GetUsersReports(pool))
+		report.GET("/all", handlers.GetAllReports(pool))
 		report.GET("/zone/:zone_id", handlers.GetReportsByZone(pool))
 		report.GET("/:folio", handlers.GetReportByFolioHandler(pool))
 		report.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))
 		report.DELETE("/:folio", handlers.DeleteReportHandler(pool))
+
+		report.POST("/:report_id/images", handlers.RegisterImagesRows(pool))
+		report.PUT("/:report_id/images/:image_id", handlers.UploadToS3(uploader, pool))
 	}
 
 	router.Run(":" + cfg.Port)

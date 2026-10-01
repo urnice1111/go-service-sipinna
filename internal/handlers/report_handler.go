@@ -71,6 +71,38 @@ func CreateReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 }
 
+func RegisterImagesRows(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		reportID := c.Param("report_id")
+
+		if reportID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "You must provide a valid report id"})
+			return
+		}
+
+		fmt.Println(reportID)
+
+		var req models.ImagesRequest
+		if err := c.BindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No images"})
+			return
+		}
+
+		imagesList := &models.ImagesRequest{
+			Images: req.Images,
+		}
+
+		err := repository.WriteImages(pool, reportID, *imagesList)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": imagesList})
+	}
+}
+
 func GetReportsByZone(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var zoneID string = c.Param("zone_id")
@@ -97,6 +129,24 @@ func GetReportsByZone(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, gin.H{"reports": reports})
 
+	}
+}
+
+// GetAllReports returns every report to 'administrador' and 'alimentador' only gets its assigned zone.
+func GetAllReports(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		_, scopeZoneID, ok := requireActiveStaff(c, pool)
+		if !ok {
+			return
+		}
+
+		reports, err := repository.GetReportsByZone(pool, "", scopeZoneID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"reports": reports})
 	}
 }
 
