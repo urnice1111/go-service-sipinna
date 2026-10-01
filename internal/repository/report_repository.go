@@ -475,18 +475,21 @@ func DeleteReport(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) ([]s
 	return imageURLs, nil
 }
 
-func WriteImages(pool *pgxpool.Pool, reportID string, images_url models.ImagesRequest) error {
+func WriteImages(pool *pgxpool.Pool, reportID string, images_url models.ImagesRequest) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	var query string = `
 		insert into imagenes_reporte (reporte_id, url, orden)
-		values ($1, $2, $3);
+		values ($1, $2, $3)
+		returning id;
 	`
+
+	var imagesIDs []string
 
 	tx, err := pool.Begin(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer tx.Rollback(ctx)
@@ -497,24 +500,29 @@ func WriteImages(pool *pgxpool.Pool, reportID string, images_url models.ImagesRe
 			generateUniqueFilename(image.ContentType),
 		)
 
-		_, err := tx.Exec(
+		var tempID string
+
+		err := tx.QueryRow(
 			ctx,
 			query,
 			reportID,
 			key,
 			idx,
-		)
+		).Scan(&tempID)
+
 		if err != nil {
 			fmt.Println("aqui")
-			return err
+			return nil, err
 		}
+
+		imagesIDs = append(imagesIDs, tempID)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return imagesIDs, nil
 }
 
 // ======= Helpers

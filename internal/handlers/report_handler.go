@@ -92,14 +92,14 @@ func RegisterImagesRows(pool *pgxpool.Pool) gin.HandlerFunc {
 			Images: req.Images,
 		}
 
-		err := repository.WriteImages(pool, reportID, *imagesList)
+		imagesIDs, err := repository.WriteImages(pool, reportID, *imagesList)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"success": imagesList})
+		c.JSON(http.StatusOK, gin.H{"success": imagesIDs})
 	}
 }
 
