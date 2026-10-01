@@ -2,7 +2,10 @@ package repository
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"go-service-sipinna/internal/models"
 	"time"
 
@@ -462,4 +465,60 @@ func DeleteReport(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) ([]s
 	}
 
 	return imageURLs, nil
+}
+
+func WriteImages(pool *pgxpool.Pool, reportID string, images_url models.ImagesRequest) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var query string = `
+		insert into imagenes_reporte (reporte_id, url, orden)
+		values ($1, $2, $3);
+	`
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer tx.Rollback(ctx)
+
+	for idx, image := range images_url.Images {
+		key := fmt.Sprintf(
+			"report/%s",
+			generateUniqueFilename(image.ContentType),
+		)
+
+		_, err := tx.Exec(
+			ctx,
+			query,
+			reportID,
+			key,
+			idx,
+		)
+		if err != nil {
+			fmt.Println("aqui")
+			return err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ======= Helpers
+
+func generateUniqueFilename(ext string) string {
+
+	randomBytes := make([]byte, 8)
+	rand.Read(randomBytes)
+	randomStr := hex.EncodeToString(randomBytes)
+
+	timestamp := time.Now().Format("20060102-150405")
+
+	return fmt.Sprintf("%s-%s.%s", timestamp, randomStr, ext)
+
 }
