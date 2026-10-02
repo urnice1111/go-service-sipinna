@@ -538,3 +538,44 @@ func generateUniqueFilename(ext string) string {
 	return fmt.Sprintf("%s-%s.%s", timestamp, randomStr, ext)
 
 }
+
+func UpdateReportDraft(pool *pgxpool.Pool, reportID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	query := `
+		INSERT INTO historial_estados (
+			reporte_id,
+			estado,
+			motivo
+		)
+		SELECT
+			r.id,
+			'registrado',
+			'Todas las imágenes fueron procesadas'
+		FROM reportes r
+		WHERE r.id = $1
+		AND EXISTS (
+			SELECT 1
+			FROM imagenes_reporte ir
+			WHERE ir.reporte_id = r.id
+		)
+		AND NOT EXISTS (
+			SELECT 1
+			FROM imagenes_reporte ir
+			WHERE ir.reporte_id = r.id
+			  AND ir.estado = 'pendiente'
+		);
+	`
+
+	result, err := pool.Exec(ctx, query, reportID)
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("reporte no encontrado o todavía tiene imágenes pendientes")
+	}
+
+	return nil
+}

@@ -91,7 +91,7 @@ func (u *S3Uploader) Upload(ctx context.Context, file *multipart.FileHeader, key
 func UploadToS3(uploader *S3Uploader, pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var response models.ResponseS3
-		fmt.Println("CONTENT TYPE:", c.GetHeader("Content-Type")) //debug
+		fmt.Println("CONTENT TYPE:", c.GetHeader("Content-Type")) //debu
 
 		file, err := c.FormFile("file")
 
@@ -136,6 +136,19 @@ func UploadToS3(uploader *S3Uploader, pool *pgxpool.Pool) gin.HandlerFunc {
 			response.Succes = false
 			c.JSON(http.StatusInternalServerError, response)
 			return
+		}
+
+		err = repository.UpdateImageStatus(pool, imageID)
+
+		if err != nil {
+			response.Status = "uploaded_not_updated"
+			response.ImageID = ""
+			response.Message = "Succesfully inserted into s3 but not updated on DB"
+			response.Succes = false
+
+			c.JSON(http.StatusInternalServerError, response)
+			return
+
 		}
 
 		response.Status = "uploaded"

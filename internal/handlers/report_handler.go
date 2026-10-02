@@ -332,3 +332,30 @@ func DeleteReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		c.Status(http.StatusNoContent)
 	}
 }
+
+func UpdateReport(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		reportID := c.Param("report_id")
+
+		if reportID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "No report ID provided",
+			})
+			return
+		}
+
+		fmt.Println(reportID)
+
+		err := repository.UpdateReportDraft(pool, reportID)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err,
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, true)
+
+	}
+}

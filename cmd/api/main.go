@@ -123,6 +123,7 @@ func main() {
 
 		report.POST("/:report_id/images", handlers.RegisterImagesRows(pool))
 		report.PUT("/:report_id/images/:image_id", handlers.UploadToS3(uploader, pool))
+		report.PUT("/:report_id/submit", handlers.UpdateReport(pool))
 	}
 
 	router.Run(":" + cfg.Port)
