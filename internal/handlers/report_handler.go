@@ -3,8 +3,10 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
+	"go-service-sipinna/internal/resend"
 	"net/http"
 	"strings"
 
@@ -24,7 +26,7 @@ type CreateReport struct {
 	SightingTime     string  `json:"sighting_time" db:"horario_avistamiento"`
 }
 
-func CreateReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
+func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString("user_id")
 		nonExisting := c.GetBool("is_admin")
@@ -33,6 +35,8 @@ func CreateReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		} else {
 			fmt.Println("si existe")
 		}
+
+		resend.SendMessage(cfg, "emilianogarram2910@gmail.com")
 
 		fmt.Println(userID)
 		var req CreateReport

@@ -113,7 +113,7 @@ func main() {
 	report := router.Group("/report")
 	report.Use(middleware.AuthRequired())
 	{
-		report.POST("", handlers.CreateReportHandler(pool))
+		report.POST("", handlers.CreateReportHandler(pool, cfg))
 		report.GET("", handlers.GetUsersReports(pool))
 		report.GET("/all", handlers.GetAllReports(pool))
 		report.GET("/zone/:zone_id", handlers.GetReportsByZone(pool))
