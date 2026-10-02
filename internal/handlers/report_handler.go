@@ -6,7 +6,6 @@ import (
 	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
-	"go-service-sipinna/internal/resend"
 	"net/http"
 	"strings"
 
@@ -29,14 +28,6 @@ type CreateReport struct {
 func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString("user_id")
-		nonExisting := c.GetBool("is_admin")
-		if !nonExisting {
-			fmt.Println("no existe")
-		} else {
-			fmt.Println("si existe")
-		}
-
-		resend.SendMessage(cfg, "emilianogarram2910@gmail.com")
 
 		fmt.Println(userID)
 		var req CreateReport
@@ -44,15 +35,7 @@ func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		}
 
-		idV7, err := uuid.NewV7()
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate uuid" + err.Error()})
-			return
-		}
-
 		report := &models.Report{
-			ID:               idV7,
 			Description:      req.Description,
 			Latitude:         req.Latitude,
 			Longitude:        req.Longitude,
@@ -77,6 +60,7 @@ func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc
 
 func RegisterImagesRows(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		
 		reportID := c.Param("report_id")
 
 		if reportID == "" {
@@ -154,6 +138,7 @@ func GetAllReports(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+// TODO: Only get batches and divide by pages
 func GetUsersReports(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString("user_id")

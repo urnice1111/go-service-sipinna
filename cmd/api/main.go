@@ -87,7 +87,6 @@ func main() {
 	}))
 
 	router.POST("/auth/citizen", handlers.CitizenSignInHandler(pool, cfg))
-	router.POST("/auth/admin", handlers.AdminSignInHandler(pool, cfg))
 	router.POST("/auth/login", handlers.LoginHandler(pool, cfg))
 	router.POST("/auth/logout", handlers.LogoutHandler)
 	router.GET("/auth/me", middleware.AuthMiddleware(cfg), func(c *gin.Context) {
@@ -107,23 +106,27 @@ func main() {
 			"zone_name": zoneName,
 		})
 	})
-	router.PATCH("/admin/:id/status-accepted", middleware.AuthMiddleware(cfg), handlers.AcceptOrRejectAdmin(pool))
+
+	//Deprecated
+	// router.PATCH("/admin/:id/status-accepted", middleware.AuthMiddleware(cfg), handlers.AcceptOrRejectAdmin(pool))
 	router.GET("/zones", middleware.AuthRequired(), handlers.GetZones(pool))
 
 	report := router.Group("/report")
 	report.Use(middleware.AuthRequired())
 	{
-		report.POST("", handlers.CreateReportHandler(pool, cfg))
-		report.GET("", handlers.GetUsersReports(pool))
+
+		// TODO: For every endpoint returning reports, just initially fetch last year's and add /date to get other info
+		report.POST("", handlers.CreateReportHandler(pool, cfg)) // Create
+		report.GET("", handlers.GetUsersReports(pool))           // Get all user reports
 		report.GET("/all", handlers.GetAllReports(pool))
 		report.GET("/zone/:zone_id", handlers.GetReportsByZone(pool))
 		report.GET("/:folio", handlers.GetReportByFolioHandler(pool))
-		report.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))
+		report.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))	
 		report.DELETE("/:folio", handlers.DeleteReportHandler(pool))
 
-		report.POST("/:report_id/images", handlers.RegisterImagesRows(pool))
-		report.PUT("/:report_id/images/:image_id", handlers.UploadToS3(uploader, pool))
-		report.PUT("/:report_id/submit", handlers.UpdateReport(pool))
+		report.POST("/:report_id/images", handlers.RegisterImagesRows(pool))            // Register images space
+		report.PUT("/:report_id/images/:image_id", handlers.UploadToS3(uploader, pool)) // Upload images
+		report.PUT("/:report_id/submit", handlers.UpdateReport(pool))                   // Confirm report
 	}
 
 	router.Run(":" + cfg.Port)

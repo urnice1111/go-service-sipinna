@@ -143,6 +143,7 @@ func CreateUser(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 
 }
 
+// This will maybe be useful when creating admin by admin
 func CreateAdmin(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 	var ctx context.Context
 	var cancel context.CancelFunc

@@ -26,14 +26,6 @@ type CreateCitizen struct {
 	Password        string `json:"password" binding:"required"`
 }
 
-type CreateAdmin struct {
-	Name            string `json:"nombre" binding:"required"`
-	Role            string `json:"rol" biding:"required"`
-	Email           string `json:"email" binding:"required_without=TelephoneNumber,omitempty,email"`
-	TelephoneNumber string `json:"telefono" binding:"required_without=Email,omitempty,e164"`
-	Password        string `json:"password" binding:"required"`
-}
-
 type LoginRequest struct {
 	Email    *string `json:"email"`
 	Phone    *string `json:"number"`
@@ -100,103 +92,44 @@ func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFun
 	}
 }
 
-func AdminSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var req CreateAdmin
-		if err := c.BindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
+// Deprecated!!!!!!!
+// func AcceptOrRejectAdmin(pool *pgxpool.Pool) gin.HandlerFunc {
+// 	return func(c *gin.Context) {
+// 		if !c.GetBool("is_admin") {
+// 			c.JSON(http.StatusForbidden, gin.H{"error": "admin privileges are required"})
+// 			return
+// 		}
+// 		adminID, err := uuid.Parse(c.Param("id"))
+// 		if err != nil {
+// 			c.JSON(http.StatusBadRequest, gin.H{
+// 				"error": "invalid admin id",
+// 			})
+// 			return
+// 		}
 
-		emailMissing := strings.TrimSpace(req.Email) == ""
-		phoneMissing := strings.TrimSpace(req.TelephoneNumber) == ""
+// 		accountStatus, err := repository.ActivateAdminAccount(
+// 			pool,
+// 			adminID,
+// 		)
+// 		if errors.Is(err, pgx.ErrNoRows) {
+// 			c.JSON(http.StatusNotFound, gin.H{
+// 				"error": "admin not found or account is already deactivated",
+// 			})
+// 			return
+// 		}
+// 		if err != nil {
+// 			c.JSON(http.StatusInternalServerError, gin.H{
+// 				"error": "could not update account status",
+// 			})
+// 			return
+// 		}
 
-		if emailMissing && phoneMissing {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "email or telephone number is required",
-			})
-			return
-		}
-
-		if len(req.Password) < 6 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "password must be at least 6"})
-			return
-		}
-
-		var HashedPassword, err = bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password" + err.Error()})
-			return
-		}
-
-		idV7, err := uuid.NewV7()
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate uuid" + err.Error()})
-			return
-		}
-
-		user := &models.User{
-			ID:              idV7,
-			Name:            req.Name,
-			Role:            req.Role,
-			Email:           optionalString(req.Email),
-			TelephoneNumber: optionalString(req.TelephoneNumber),
-			HashedPassword:  string(HashedPassword),
-		}
-
-		newUser, err := repository.CreateAdmin(pool, user)
-
-		//TODO :- Add logic to verify what type of error is: if the user already exists etc
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error registering the user on the db" + err.Error()})
-			return
-		}
-
-		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, true, req.Role, "change_later", "")
-
-	}
-
-}
-
-func AcceptOrRejectAdmin(pool *pgxpool.Pool) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if !c.GetBool("is_admin") {
-			c.JSON(http.StatusForbidden, gin.H{"error": "admin privileges are required"})
-			return
-		}
-		adminID, err := uuid.Parse(c.Param("id"))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "invalid admin id",
-			})
-			return
-		}
-
-		accountStatus, err := repository.ActivateAdminAccount(
-			pool,
-			adminID,
-		)
-		if errors.Is(err, pgx.ErrNoRows) {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": "admin not found or account is already deactivated",
-			})
-			return
-		}
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "could not update account status",
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"id":            adminID,
-			"estado_cuenta": accountStatus,
-		})
-	}
-}
+// 		c.JSON(http.StatusOK, gin.H{
+// 			"id":            adminID,
+// 			"estado_cuenta": accountStatus,
+// 		})
+// 	}
+// }
 
 func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
