@@ -279,20 +279,34 @@ func requireActiveStaff(c *gin.Context, pool *pgxpool.Pool) (uuid.UUID, *uuid.UU
 	return userID, staff.ZoneID, true
 }
 
+// GetReportByFolioHandler regresa el detalle de un reporte.
+// - Personal (administrador / alimentador activado): cualquier reporte de su zona.
+// - Ciudadano: solo sus propios reportes, sin el nivel de sospecha ni su nombre.
 func GetReportByFolioHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		_, scopeZoneID, ok := requireActiveStaff(c, pool)
-		if !ok {
-			return
-		}
-
 		folio := strings.TrimSpace(c.Param("folio"))
 		if folio == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "you must provide a folio"})
 			return
 		}
 
-		report, err := repository.GetReportByFolio(pool, folio, scopeZoneID)
+		var scopeZoneID, citizenID *uuid.UUID
+		if c.GetString("user_type") == "citizen" {
+			id, err := uuid.Parse(c.GetString("user_id"))
+			if err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid user id"})
+				return
+			}
+			citizenID = &id
+		} else {
+			_, zoneID, ok := requireActiveStaff(c, pool)
+			if !ok {
+				return
+			}
+			scopeZoneID = zoneID
+		}
+
+		report, err := repository.GetReportByFolio(pool, folio, scopeZoneID, citizenID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
 			return
@@ -300,6 +314,12 @@ func GetReportByFolioHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not get report"})
 			return
+		}
+
+		// El ciudadano no debe ver el análisis de sospecha de su propio reporte
+		if citizenID != nil {
+			report.SuspiciusLevel = nil
+			report.CitizenName = ""
 		}
 
 		c.JSON(http.StatusOK, gin.H{"report": report})
