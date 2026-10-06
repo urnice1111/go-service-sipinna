@@ -17,6 +17,9 @@ type Config struct {
 	// API key de TypeSafe para el análisis de reportes con Jev (opcional)
 	TypeSafeAPIKey      string
 	SipinnaResendAPIKey string
+	// Proyecto de Supabase usado solo para validar los inicios de sesión con Google
+	SupabaseURL     string
+	SupabaseAnonKey string
 }
 
 func Load() (*Config, error) {
@@ -30,6 +33,8 @@ func Load() (*Config, error) {
 		FrontendURL:         os.Getenv("FRONTEND_URL"),
 		TypeSafeAPIKey:      os.Getenv("TYPESAFE_API_KEY"),
 		SipinnaResendAPIKey: os.Getenv("SIPINNA_RESEND_API_KEY"),
+		SupabaseURL:         strings.TrimRight(strings.TrimSpace(os.Getenv("SUPABASE_URL")), "/"),
+		SupabaseAnonKey:     strings.TrimSpace(os.Getenv("SUPABASE_ANON_KEY")),
 	}
 
 	if strings.TrimSpace(config.JWTSecret) == "" {
