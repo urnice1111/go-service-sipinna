@@ -7,8 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"go-service-sipinna/internal/models"
+	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -404,7 +408,12 @@ func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) 
 		if err := rows.Scan(&url); err != nil {
 			return nil, err
 		}
-		rd.Images = append(rd.Images, url)
+		presignedURL, err := GetPresignedURL("sipinna-photos", url, 15*time.Minute)
+
+		if err != nil {
+			return nil, err
+		}
+		rd.Images = append(rd.Images, presignedURL)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -498,7 +507,7 @@ func WriteImages(pool *pgxpool.Pool, reportID string, images_url models.ImagesRe
 	for idx, image := range images_url.Images {
 		key := fmt.Sprintf(
 			"report/%s",
-			generateUniqueFilename(image.ContentType),
+			generateUniqueFilename(strings.TrimPrefix(image.ContentType, "image/")),
 		)
 
 		var tempID string
@@ -578,4 +587,29 @@ func UpdateReportDraft(pool *pgxpool.Pool, reportID string) error {
 	}
 
 	return nil
+}
+
+func GetPresignedURL(bucketName string, objectKey string, lifetimeDuration time.Duration) (string, error) {
+	// 1. Load the default AWS configuration (~/.aws/credentials or environment variables)
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+	if err != nil {
+		return "", fmt.Errorf("unable to load SDK config: %v", err)
+	}
+
+	// 2. Create the S3 client and its dedicated PresignClient
+	s3Client := s3.NewFromConfig(cfg)
+	presignClient := s3.NewPresignClient(s3Client)
+
+	// 3. Request a presigned URL for the GetObject operation
+	presignedReq, err := presignClient.PresignGetObject(context.TODO(), &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+	}, s3.WithPresignExpires(lifetimeDuration)) // Set expiration time
+
+	if err != nil {
+		return "", fmt.Errorf("failed to generate presigned URL: %v", err)
+	}
+
+	// 4. Return the complete signed URL string
+	return presignedReq.URL, nil
 }

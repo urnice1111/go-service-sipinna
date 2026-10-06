@@ -87,6 +87,7 @@ func (u *S3Uploader) Upload(ctx context.Context, file *multipart.FileHeader, key
 	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", u.bucketName, key), nil
 }
 
+
 // UploadToS3 handles multiple S3 uploads.
 func UploadToS3(uploader *S3Uploader, pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
