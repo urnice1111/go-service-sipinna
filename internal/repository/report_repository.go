@@ -329,7 +329,8 @@ func UpdateReportStatus(
 }
 
 // GetReportByFolio returns pgx.ErrNoRows when the folio does not exist or is outside scopeZoneID.
-func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) (*models.ReportDetail, error) {
+// citizenID limita la búsqueda a los reportes de ese ciudadano (nil = sin límite, para el personal).
+func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID, citizenID *uuid.UUID) (*models.ReportDetail, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -363,12 +364,13 @@ func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) 
 		LIMIT 1
 	) AS he ON TRUE
 	WHERE r.folio = $1
-		AND ($2::uuid IS NULL OR r.zona_id = $2);
+		AND ($2::uuid IS NULL OR r.zona_id = $2)
+		AND ($3::uuid IS NULL OR r.ciudadano_id = $3);
 	`
 
 	var reportID uuid.UUID
 	var rd models.ReportDetail
-	err := pool.QueryRow(ctx, queryGetReport, folio, scopeZoneID).Scan(
+	err := pool.QueryRow(ctx, queryGetReport, folio, scopeZoneID, citizenID).Scan(
 		&reportID,
 		&rd.Folio,
 		&rd.Description,
@@ -564,11 +566,6 @@ func UpdateReportDraft(pool *pgxpool.Pool, reportID string) error {
 			'Todas las imágenes fueron procesadas'
 		FROM reportes r
 		WHERE r.id = $1
-		AND EXISTS (
-			SELECT 1
-			FROM imagenes_reporte ir
-			WHERE ir.reporte_id = r.id
-		)
 		AND NOT EXISTS (
 			SELECT 1
 			FROM imagenes_reporte ir
@@ -588,6 +585,7 @@ func UpdateReportDraft(pool *pgxpool.Pool, reportID string) error {
 
 	return nil
 }
+
 
 func GetPresignedURL(bucketName string, objectKey string, lifetimeDuration time.Duration) (string, error) {
 	// 1. Load the default AWS configuration (~/.aws/credentials or environment variables)
@@ -613,3 +611,4 @@ func GetPresignedURL(bucketName string, objectKey string, lifetimeDuration time.
 	// 4. Return the complete signed URL string
 	return presignedReq.URL, nil
 }
+
