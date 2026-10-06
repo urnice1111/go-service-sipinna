@@ -42,6 +42,7 @@ func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc
 		var req CreateReport
 		if err := c.BindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
 
 		idV7, err := uuid.NewV7()

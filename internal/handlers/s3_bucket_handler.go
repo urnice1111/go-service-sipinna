@@ -87,7 +87,6 @@ func (u *S3Uploader) Upload(ctx context.Context, file *multipart.FileHeader, key
 	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", u.bucketName, key), nil
 }
 
-
 // UploadToS3 handles multiple S3 uploads.
 func UploadToS3(uploader *S3Uploader, pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -98,6 +97,7 @@ func UploadToS3(uploader *S3Uploader, pool *pgxpool.Pool) gin.HandlerFunc {
 
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err})
+			return
 		}
 		reportID := c.Param("report_id")
 
@@ -113,6 +113,13 @@ func UploadToS3(uploader *S3Uploader, pool *pgxpool.Pool) gin.HandlerFunc {
 		}
 
 		image, err := repository.GetImage(pool, reportID, imageID)
+		if err != nil {
+			response.Status = "image_not_found"
+			response.Message = "Failed to get image: " + err.Error()
+			response.Succes = false
+			c.JSON(http.StatusNotFound, response)
+			return
+		}
 
 		if image.Status == "registrado" {
 			response.Status = "already_uploaded"
