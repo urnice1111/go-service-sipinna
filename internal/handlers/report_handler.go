@@ -7,6 +7,7 @@ import (
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
 	"go-service-sipinna/internal/resend"
+	"log"
 	"net/http"
 	"strings"
 
@@ -327,7 +328,7 @@ func GetReportByFolioHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
-func DeleteReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
+func DeleteReportHandler(pool *pgxpool.Pool, uploader *S3Uploader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		_, scopeZoneID, ok := requireActiveStaff(c, pool)
 		if !ok {
@@ -340,7 +341,7 @@ func DeleteReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
-		_, err := repository.DeleteReport(pool, folio, scopeZoneID)
+		imageKeys, err := repository.DeleteReport(pool, folio, scopeZoneID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
 			return
@@ -348,6 +349,12 @@ func DeleteReportHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not delete report"})
 			return
+		}
+
+		for _, key := range imageKeys {
+			if err := uploader.Delete(c.Request.Context(), key); err != nil {
+				log.Printf("could not delete image %s of report %s: %v", key, folio, err)
+			}
 		}
 
 		c.Status(http.StatusNoContent)

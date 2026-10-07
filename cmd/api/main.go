@@ -119,7 +119,7 @@ func main() {
 		report.GET("/zone/:zone_id", handlers.GetReportsByZone(pool))
 		report.GET("/:folio", handlers.GetReportByFolioHandler(pool))
 		report.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))
-		report.DELETE("/:folio", handlers.DeleteReportHandler(pool))
+		report.DELETE("/:folio", handlers.DeleteReportHandler(pool, uploader))
 
 		report.POST("/:report_id/images", handlers.RegisterImagesRows(pool))
 		report.PUT("/:report_id/images/:image_id", handlers.UploadToS3(uploader, pool))

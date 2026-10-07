@@ -87,6 +87,18 @@ func (u *S3Uploader) Upload(ctx context.Context, file *multipart.FileHeader, key
 	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", u.bucketName, key), nil
 }
 
+// Delete removes an object from S3
+func (u *S3Uploader) Delete(ctx context.Context, key string) error {
+	_, err := u.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(u.bucketName),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete from S3: %w", err)
+	}
+	return nil
+}
+
 // UploadToS3 handles multiple S3 uploads.
 func UploadToS3(uploader *S3Uploader, pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
