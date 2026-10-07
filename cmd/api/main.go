@@ -89,6 +89,7 @@ func main() {
 	router.POST("/auth/citizen", handlers.CitizenSignInHandler(pool, cfg))
 	router.POST("/auth/admin", handlers.AdminSignInHandler(pool, cfg))
 	router.POST("/auth/login", handlers.LoginHandler(pool, cfg))
+	router.POST("/auth/google", handlers.GoogleLoginHandler(pool, cfg))
 	router.POST("/auth/logout", handlers.LogoutHandler)
 	router.GET("/auth/me", middleware.AuthMiddleware(cfg), func(c *gin.Context) {
 		// Tokens emitidos antes de agregar los claims "name"/"zone_name" no los traen; se regresan vacíos.
@@ -109,6 +110,15 @@ func main() {
 	})
 	router.PATCH("/admin/:id/status-accepted", middleware.AuthMiddleware(cfg), handlers.AcceptOrRejectAdmin(pool))
 	router.GET("/zones", middleware.AuthRequired(), handlers.GetZones(pool))
+
+	// Gestión de cuentas solo para administradores activos.
+	staff := router.Group("/admin/staff")
+	staff.Use(middleware.AuthMiddleware(cfg))
+	{
+		staff.GET("", handlers.ListStaffHandler(pool))
+		staff.POST("", handlers.CreateStaffHandler(pool))
+		staff.PATCH("/:id", handlers.UpdateStaffHandler(pool))
+	}
 
 	report := router.Group("/report")
 	report.Use(middleware.AuthRequired())
