@@ -6,6 +6,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// Report es un reporte de posible trabajo infantil (tabla reportes).
+//
+// SuspiciusLevel es el puntaje de sospecha calculado por el paquete analysis:
+// 0 = parece legítimo, 1 = muy probablemente falso. State no se guarda en
+// reportes; el estado actual es la fila más reciente de historial_estados.
 type Report struct {
 	ID               uuid.UUID  `json:"id" db:"id"`
 	Folio            string     `json:"folio" db:"folio"`
@@ -27,6 +32,11 @@ type Report struct {
 	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
 }
 
+// IndividualReport es un reporte tal como se muestra al personal en los listados:
+// incluye el nombre de la zona, el del ciudadano y el último estado del historial.
+//
+// SuspiciusLevel es nil cuando el reporte aún no se analiza o cuando se oculta
+// al ciudadano dueño del reporte.
 type IndividualReport struct {
 	Folio            string    `json:"folio" db:"folio"`
 	Description      string    `json:"description" db:"descripcion"`
@@ -43,6 +53,8 @@ type IndividualReport struct {
 	StateChangedAt   time.Time `json:"state_changed_at" db:"estado_changed_at"`
 }
 
+// IndividualReportInfoBrief es el resumen de un reporte que ve el ciudadano en
+// la lista de sus propios reportes (GET /report).
 type IndividualReportInfoBrief struct {
 	Folio       string  `json:"folio" db:"folio"`
 	State       string  `json:"report_state" db:"report_state"`
@@ -51,8 +63,11 @@ type IndividualReportInfoBrief struct {
 	Description string  `json:"description" db:"description"`
 }
 
+// ReportDetail es el detalle completo de un reporte (GET /report/:folio).
 type ReportDetail struct {
 	IndividualReport
-	SightingTime string   `json:"sighting_time"`
-	Images       []string `json:"images"`
+	// SightingTime es el horario aproximado en que se vio a los menores.
+	SightingTime string `json:"sighting_time"`
+	// Images son URLs prefirmadas de S3 con vigencia corta (15 minutos).
+	Images []string `json:"images"`
 }

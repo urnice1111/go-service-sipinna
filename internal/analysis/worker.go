@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Cada cuánto revisa el worker si hay reportes pendientes y cuántos analiza por ciclo.
 const (
 	workerInterval  = 15 * time.Second
 	workerBatchSize = 20
@@ -99,6 +100,7 @@ ORDER BY r.created_at
 LIMIT $1
 `
 
+// Guarda el puntaje ($2) y, solo si Jev participó ($3), la fecha del análisis con IA.
 const queryUpdateSuspicion = `
 UPDATE reportes
 SET sospechoso = $2,
@@ -106,6 +108,7 @@ SET sospechoso = $2,
 WHERE id = $1
 `
 
+// pendingReport es un reporte sin puntaje junto con los datos que necesita el evaluador.
 type pendingReport struct {
 	id    uuid.UUID
 	input ReportInput
@@ -151,6 +154,7 @@ func (w *Worker) processBatch(ctx context.Context) bool {
 	return false
 }
 
+// motivos une los motivos en una sola línea para el log.
 func motivos(reasons []string) string {
 	if len(reasons) == 0 {
 		return "ninguno"
@@ -158,6 +162,8 @@ func motivos(reasons []string) string {
 	return strings.Join(reasons, "; ")
 }
 
+// loadPending lee hasta workerBatchSize reportes enviados que aún no tienen puntaje,
+// del más antiguo al más reciente.
 func (w *Worker) loadPending(ctx context.Context) ([]pendingReport, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -194,6 +200,7 @@ func (w *Worker) loadPending(ctx context.Context) ([]pendingReport, error) {
 	return out, rows.Err()
 }
 
+// save guarda el puntaje de sospecha del reporte id.
 func (w *Worker) save(ctx context.Context, id uuid.UUID, res Result) error {
 	saveCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

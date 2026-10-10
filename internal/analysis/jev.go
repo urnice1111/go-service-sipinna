@@ -13,6 +13,7 @@ import (
 	"time"
 )
 
+// Endpoint y modelo de Jev que usa [NewJevClient].
 const (
 	defaultJevURL   = "https://api.typesafe.ai/v1/systemone"
 	defaultJevModel = "jev-latest"
@@ -50,12 +51,14 @@ type Answer struct {
 	Confidence    float64            `json:"confidence"`
 }
 
+// jevRequest es el cuerpo de POST /v1/systemone.
 type jevRequest struct {
 	Model     string              `json:"model"`
 	State     any                 `json:"state"`
 	Questions map[string]Question `json:"questions"`
 }
 
+// jevResponse es la respuesta de POST /v1/systemone; Answers usa los mismos ids que las preguntas.
 type jevResponse struct {
 	Model   string            `json:"model"`
 	Answers map[string]Answer `json:"answers"`
@@ -67,6 +70,7 @@ type JevError struct {
 	Body   string
 }
 
+// Error implementa la interfaz error.
 func (e *JevError) Error() string {
 	return fmt.Sprintf("jev respondió %d: %s", e.Status, e.Body)
 }

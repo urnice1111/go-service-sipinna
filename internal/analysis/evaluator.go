@@ -176,6 +176,7 @@ func meaningfulLength(desc string) int {
 	return n
 }
 
+// clamp01 limita v al rango [0, 1]; NaN se convierte en 0.
 func clamp01(v float64) float64 {
 	if math.IsNaN(v) {
 		return 0
@@ -183,6 +184,7 @@ func clamp01(v float64) float64 {
 	return math.Max(0, math.Min(1, v))
 }
 
+// round2 redondea v a dos decimales.
 func round2(v float64) float64 {
 	return math.Round(v*100) / 100
 }

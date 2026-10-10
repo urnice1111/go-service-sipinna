@@ -14,6 +14,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// CreateStaffRequest es el cuerpo de POST /admin/staff. ZoneID es obligatorio para
+// un alimentador y se ignora para un administrador.
 type CreateStaffRequest struct {
 	Name            string  `json:"nombre" binding:"required"`
 	Role            string  `json:"rol" binding:"required"`
@@ -21,18 +23,21 @@ type CreateStaffRequest struct {
 	Email           string  `json:"email" binding:"omitempty,email"`
 	TelephoneNumber string  `json:"telefono" binding:"omitempty,e164"`
 	Password        string  `json:"password" binding:"required"`
-	// The account created by an admin is active
+	// Activate indica si la cuenta nace activada (por defecto true); false la deja pendiente.
 	Activate *bool `json:"activar"`
 }
 
-// Fields ommited keeps their actual values
+// UpdateStaffRequest es el cuerpo de PATCH /admin/staff/:id. Los campos omitidos
+// conservan su valor actual.
 type UpdateStaffRequest struct {
 	Role         *string `json:"rol"`
 	ZoneID       *string `json:"zona_id"`
 	AccountState *string `json:"estado_cuenta"`
 }
 
-// requireAdministrador allows only activated 'administrador' accounts (not 'alimentador').
+// requireAdministrador es como requireActiveStaff, pero solo permite cuentas
+// 'administrador' activadas (no 'alimentador'). Si regresa false, la respuesta de
+// error ya se escribió.
 func requireAdministrador(c *gin.Context, pool *pgxpool.Pool) (uuid.UUID, bool) {
 	userID, scopeZoneID, ok := requireActiveStaff(c, pool)
 	if !ok {
@@ -45,15 +50,18 @@ func requireAdministrador(c *gin.Context, pool *pgxpool.Pool) (uuid.UUID, bool) 
 	return userID, true
 }
 
+// validRole indica si role es un rol de personal válido.
 func validRole(role string) bool {
 	return role == "administrador" || role == "alimentador"
 }
 
+// validAccountState indica si state es un estado de cuenta que se puede asignar.
 func validAccountState(state string) bool {
 	return state == "activada" || state == "pendiente"
 }
 
-// resolveZone: el administrador no lleva zona; un alimentador debe tener una.
+// resolveZone regresa la zona que le corresponde al rol: el administrador no lleva
+// zona y un alimentador debe tener una. Si regresa false, la respuesta 400 ya se escribió.
 func resolveZone(c *gin.Context, role string, zoneID *uuid.UUID) (*uuid.UUID, bool) {
 	if role == "administrador" {
 		// El administrador ve todas las zonas; no se le asigna ninguna.
@@ -66,6 +74,8 @@ func resolveZone(c *gin.Context, role string, zoneID *uuid.UUID) (*uuid.UUID, bo
 	return zoneID, true
 }
 
+// parseOptionalUUID interpreta value como un UUID de zona; nil o vacío regresan nil.
+// Si el valor no es un UUID válido responde 400 y regresa false.
 func parseOptionalUUID(c *gin.Context, value *string) (*uuid.UUID, bool) {
 	if value == nil || strings.TrimSpace(*value) == "" {
 		return nil, true
@@ -78,6 +88,8 @@ func parseOptionalUUID(c *gin.Context, value *string) (*uuid.UUID, bool) {
 	return &id, true
 }
 
+// ListStaffHandler maneja GET /admin/staff: lista todas las cuentas de personal,
+// primero las pendientes. Solo para administradores.
 func ListStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if _, ok := requireAdministrador(c, pool); !ok {
@@ -94,8 +106,12 @@ func ListStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
-// CreateStaffHandler da de alta una cuenta de staff sin tocar la sesión del administrador
-// (a diferencia de POST /auth/admin, que inicia sesión como la cuenta nueva).
+// CreateStaffHandler maneja POST /admin/staff: da de alta una cuenta de staff sin tocar
+// la sesión del administrador (a diferencia de POST /auth/admin, que inicia sesión como
+// la cuenta nueva). Solo para administradores.
+//
+// Responde 201 con la cuenta creada, 409 si el correo o teléfono ya existen y 400 si
+// la zona no existe.
 func CreateStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if _, ok := requireAdministrador(c, pool); !ok {
@@ -180,7 +196,9 @@ func CreateStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
-// UpdateStaffHandler cambia rol, zona o estado de la cuenta (activar / suspender).
+// UpdateStaffHandler maneja PATCH /admin/staff/:id: cambia rol, zona o estado de la
+// cuenta (activar / suspender). Solo para administradores; un administrador no puede
+// cambiar su propio rol ni suspender su propia cuenta.
 func UpdateStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		currentUserID, ok := requireAdministrador(c, pool)

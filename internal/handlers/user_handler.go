@@ -17,6 +17,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// CreateCitizen es el cuerpo de POST /auth/citizen. Se requiere correo o teléfono
+// (en formato E.164).
 type CreateCitizen struct {
 	Name            string `json:"nombre" binding:"required"`
 	Age             int    `json:"edad"`
@@ -26,6 +28,8 @@ type CreateCitizen struct {
 	Password        string `json:"password" binding:"required"`
 }
 
+// CreateAdmin es el cuerpo de POST /auth/admin. Se requiere correo o teléfono
+// (en formato E.164).
 type CreateAdmin struct {
 	Name            string `json:"nombre" binding:"required"`
 	Role            string `json:"rol" biding:"required"`
@@ -34,12 +38,17 @@ type CreateAdmin struct {
 	Password        string `json:"password" binding:"required"`
 }
 
+// LoginRequest es el cuerpo de POST /auth/login. Debe traer exactamente uno de
+// Email o Phone.
 type LoginRequest struct {
 	Email    *string `json:"email"`
 	Phone    *string `json:"number"`
 	Password string  `json:"password" binding:"required"`
 }
 
+// CitizenSignInHandler maneja POST /auth/citizen: registra un ciudadano con contraseña
+// (mínimo 6 caracteres, guardada con bcrypt) e inicia su sesión. Responde 201 y deja
+// la cookie de sesión.
 func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req CreateCitizen
@@ -100,6 +109,12 @@ func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFun
 	}
 }
 
+// AdminSignInHandler maneja POST /auth/admin: registra una cuenta de personal con el
+// rol indicado e inicia sesión como ella. La cuenta queda en estado "pendiente" hasta
+// que un administrador la active con [AcceptOrRejectAdmin].
+//
+// Para dar de alta personal desde el panel sin cambiar de sesión se usa
+// [CreateStaffHandler].
 func AdminSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req CreateAdmin
@@ -160,6 +175,10 @@ func AdminSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc 
 
 }
 
+// AcceptOrRejectAdmin maneja PATCH /admin/:id/status-accepted: activa una cuenta de
+// personal que está "pendiente". Requiere que la sesión sea de un administrador.
+//
+// Responde 404 si la cuenta no existe o no está pendiente.
 func AcceptOrRejectAdmin(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !c.GetBool("is_admin") {
@@ -198,6 +217,9 @@ func AcceptOrRejectAdmin(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+// LoginHandler maneja POST /auth/login: valida correo o teléfono y contraseña, y si
+// son correctos deja la cookie de sesión. Responde 401 con el mismo mensaje tanto si
+// el usuario no existe como si la contraseña es incorrecta.
 func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req LoginRequest
@@ -238,6 +260,7 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	}
 }
 
+// LogoutHandler maneja POST /auth/logout: borra la cookie de sesión.
 func LogoutHandler(c *gin.Context) {
 	c.SetSameSite(http.SameSiteNoneMode)
 	c.SetCookie("session_token", "", -1, "/", "", true, true)
@@ -247,6 +270,9 @@ func LogoutHandler(c *gin.Context) {
 
 /*HELPERS*/
 
+// respondWithToken firma un JWT HS256 con vigencia de 7 días, lo guarda en la cookie
+// "session_token" (HttpOnly, Secure, SameSite=None) y responde status con el nombre,
+// tipo de usuario y zona.
 func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.Config, isAdmin bool, userType string, userName string, zoneName string) {
 	if strings.TrimSpace(cfg.JWTSecret) == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT secret is not configured"})
@@ -275,6 +301,7 @@ func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.
 	c.JSON(status, gin.H{"name": userName, "user_type": userType, "zone_name": zoneName})
 }
 
+// stringValue regresa el valor de value sin espacios en los extremos, o "" si es nil.
 func stringValue(value *string) string {
 	if value == nil {
 		return ""
@@ -282,6 +309,8 @@ func stringValue(value *string) string {
 	return strings.TrimSpace(*value)
 }
 
+// optionalString regresa nil si value está vacío (o solo tiene espacios); si no,
+// un puntero al valor recortado.
 func optionalString(value string) *string {
 	value = strings.TrimSpace(value)
 

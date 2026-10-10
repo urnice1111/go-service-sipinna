@@ -17,6 +17,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// CreateReport inserta el reporte r a nombre de ciudadanoID (nil para un reporte
+// anónimo). La zona se elige en la base de datos como la más cercana a las
+// coordenadas (distancia haversine) y el folio se arma con su municipio.
+//
+// Solo se llena r.ID con el id que regresa la base de datos. Regresa pgx.ErrNoRows si
+// no hay ninguna zona con coordenadas.
 func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string) (*models.Report, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
@@ -120,8 +126,11 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string) (*m
 
 }
 
-// GetReportsByZone filters by zone id or municipio; an empty zoneID returns every zone. scopeZoneID, when not nil, also
-// restricts the result to that zone (used for 'alimentador' users).
+// GetReportsByZone regresa los reportes filtrados por id de zona o por municipio; un
+// zoneID vacío regresa todas las zonas. scopeZoneID, si no es nil, además limita el
+// resultado a esa zona (se usa para los usuarios 'alimentador').
+//
+// Los reportes sin analizar se regresan con nivel de sospecha 0.
 func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID) ([]models.IndividualReport, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -201,6 +210,8 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID)
 	return AllReports, nil
 }
 
+// GetReportsSummaryOfUser regresa el resumen de todos los reportes del ciudadano
+// userID con su último estado ("DRAFT" si aún no se envía).
 func GetReportsSummaryOfUser(pool *pgxpool.Pool, userID string) ([]models.IndividualReportInfoBrief, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*4)
 
@@ -258,11 +269,16 @@ func GetReportsSummaryOfUser(pool *pgxpool.Pool, userID string) ([]models.Indivi
 
 }
 
+// ErrSameReportStatus lo regresa [UpdateReportStatus] cuando el reporte ya tiene el
+// estado solicitado.
 var ErrSameReportStatus = errors.New("report already has that status")
 
-// UpdateReportStatus inserts a new row in historial_estados; the current status of a report
-// is its most recent historial_estados row. Returns pgx.ErrNoRows when the folio does not
-// exist or is outside scopeZoneID.
+// UpdateReportStatus inserta una fila nueva en historial_estados a nombre de adminID;
+// el estado actual de un reporte es su fila más reciente de historial_estados. Regresa
+// la fecha del cambio.
+//
+// Regresa pgx.ErrNoRows si el folio no existe o está fuera de scopeZoneID, y
+// [ErrSameReportStatus] si el reporte ya tiene ese estado.
 func UpdateReportStatus(
 	pool *pgxpool.Pool,
 	folio string,
@@ -328,8 +344,12 @@ func UpdateReportStatus(
 	return changedAt, nil
 }
 
-// GetReportByFolio returns pgx.ErrNoRows when the folio does not exist or is outside scopeZoneID.
-// citizenID limita la búsqueda a los reportes de ese ciudadano (nil = sin límite, para el personal).
+// GetReportByFolio regresa el detalle del reporte con ese folio, con URLs prefirmadas
+// de sus imágenes válidas por 15 minutos.
+//
+// scopeZoneID limita la búsqueda a una zona (nil = todas) y citizenID a los reportes de
+// ese ciudadano (nil = sin límite, para el personal). Regresa pgx.ErrNoRows si el folio
+// no existe o queda fuera de esos límites.
 func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID, citizenID *uuid.UUID) (*models.ReportDetail, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -425,10 +445,11 @@ func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID, 
 	return &rd, nil
 }
 
-// DeleteReport removes the report and its rows in imagenes_reporte, comentarios and
-// historial_estados (there are no FKs with ON DELETE CASCADE). Returns the image urls so
-// the caller can remove them from S3. Returns pgx.ErrNoRows when the folio does not exist
-// or is outside scopeZoneID.
+// DeleteReport borra, en una sola transacción, el reporte y sus filas en
+// imagenes_reporte, comentarios e historial_estados (no hay FKs con ON DELETE CASCADE).
+// Regresa las llaves de las imágenes para que el llamador las borre de S3.
+//
+// Regresa pgx.ErrNoRows si el folio no existe o está fuera de scopeZoneID.
 func DeleteReport(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -487,6 +508,9 @@ func DeleteReport(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) ([]s
 	return imageURLs, nil
 }
 
+// WriteImages registra, en una transacción, una fila "pendiente" en imagenes_reporte
+// por cada imagen, con una llave única "report/<nombre>.<ext>" y su orden. Regresa los
+// ids de las filas en el mismo orden que images_url.Images.
 func WriteImages(pool *pgxpool.Pool, reportID string, images_url models.ImagesRequest) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -538,6 +562,8 @@ func WriteImages(pool *pgxpool.Pool, reportID string, images_url models.ImagesRe
 }
 
 // ======= Helpers
+
+// generateUniqueFilename genera un nombre "<fecha-hora>-<16 hex aleatorios>.<ext>".
 func generateUniqueFilename(ext string) string {
 
 	randomBytes := make([]byte, 8)
@@ -550,6 +576,9 @@ func generateUniqueFilename(ext string) string {
 
 }
 
+// UpdateReportDraft envía el reporte reportID: agrega el estado "registrado" a su
+// historial siempre que ninguna de sus imágenes siga "pendiente". Regresa un error si
+// el reporte no existe o aún tiene imágenes pendientes.
 func UpdateReportDraft(pool *pgxpool.Pool, reportID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -587,6 +616,8 @@ func UpdateReportDraft(pool *pgxpool.Pool, reportID string) error {
 }
 
 
+// GetPresignedURL genera una URL prefirmada de GET para objectKey en bucketName,
+// válida durante lifetimeDuration. Usa la configuración por defecto de AWS.
 func GetPresignedURL(bucketName string, objectKey string, lifetimeDuration time.Duration) (string, error) {
 	// 1. Load the default AWS configuration (~/.aws/credentials or environment variables)
 	cfg, err := config.LoadDefaultConfig(context.TODO())

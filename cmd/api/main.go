@@ -1,3 +1,33 @@
+// Command api es el servidor HTTP del backend de SIPINNA, el sistema para reportar
+// posibles casos de trabajo infantil.
+//
+// Al arrancar carga la configuración, se conecta a PostgreSQL, prepara el cliente
+// de S3, lanza en segundo plano el análisis de sospecha de reportes y expone la API
+// REST con Gin en el puerto definido por PORT.
+//
+// Rutas principales:
+//
+//	POST   /auth/citizen                   registro de ciudadano
+//	POST   /auth/admin                     registro de personal
+//	POST   /auth/login                     inicio de sesión con contraseña
+//	POST   /auth/google                    inicio de sesión con Google (Supabase)
+//	POST   /auth/logout                    cierre de sesión
+//	GET    /auth/me                        datos de la sesión actual
+//	PATCH  /admin/:id/status-accepted      activa una cuenta de personal pendiente
+//	GET    /zones                          zonas visibles para el personal
+//	GET    /admin/staff                    lista del personal
+//	POST   /admin/staff                    alta de personal
+//	PATCH  /admin/staff/:id                cambio de rol, zona o estado de cuenta
+//	POST   /report                         crea un reporte (borrador)
+//	GET    /report                         reportes del ciudadano
+//	GET    /report/all                     todos los reportes visibles para el personal
+//	GET    /report/zone/:zone_id           reportes de una zona
+//	GET    /report/:folio                  detalle de un reporte
+//	PATCH  /report/:folio/status           cambia el estado de un reporte
+//	DELETE /report/:folio                  elimina un reporte y sus fotos
+//	POST   /report/:report_id/images       registra las fotos que se van a subir
+//	PUT    /report/:report_id/images/:id   sube una foto a S3
+//	PUT    /report/:report_id/submit       envía el reporte (deja de ser borrador)
 package main
 
 import (

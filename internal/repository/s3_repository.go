@@ -8,6 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// GetImage regresa la imagen imageID del reporte reportID. Regresa pgx.ErrNoRows si
+// la imagen no existe o no pertenece a ese reporte.
 func GetImage(pool *pgxpool.Pool, reportID string, imageID string) (*models.GetImage, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -28,6 +30,7 @@ func GetImage(pool *pgxpool.Pool, reportID string, imageID string) (*models.GetI
 	return &image, nil
 }
 
+// UpdateImageStatus marca la imagen imageID como "registrado" (ya subida a S3).
 func UpdateImageStatus(pool *pgxpool.Pool, imageID string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

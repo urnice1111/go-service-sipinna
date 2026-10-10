@@ -8,7 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// StaffMember is an admins row with its user data, as shown in the staff management panel.
+// StaffMember es una fila de admins con los datos de su usuario, tal como se muestra
+// en el panel de gestión del personal.
 type StaffMember struct {
 	ID              uuid.UUID  `json:"id"`
 	Name            string     `json:"nombre"`
@@ -21,6 +22,8 @@ type StaffMember struct {
 	CreatedAt       time.Time  `json:"created_at"`
 }
 
+// NewStaffMember son los datos para dar de alta personal con [CreateStaffMember].
+// HashedPassword ya debe venir con hash bcrypt.
 type NewStaffMember struct {
 	ID              uuid.UUID
 	Name            string
@@ -32,11 +35,13 @@ type NewStaffMember struct {
 	AccountState    string
 }
 
+// staffColumns son las columnas que lee scanStaff, en el mismo orden.
 const staffColumns = `
 	u.id, COALESCE(u.nombre, ''), u.email, u.telefono, a.rol::text, a.zona_id,
 	COALESCE(z.nombre, ''), a.estado_cuenta::text, u.created_at
 `
 
+// scanStaff lee una fila con las columnas de staffColumns. Acepta tanto pgx.Row como pgx.Rows.
 func scanStaff(row interface{ Scan(...any) error }) (*StaffMember, error) {
 	var s StaffMember
 	err := row.Scan(&s.ID, &s.Name, &s.Email, &s.TelephoneNumber, &s.Role, &s.ZoneID, &s.ZoneName, &s.AccountState, &s.CreatedAt)
@@ -46,7 +51,8 @@ func scanStaff(row interface{ Scan(...any) error }) (*StaffMember, error) {
 	return &s, nil
 }
 
-// ListStaff returns every 'administrador' and 'alimentador', pending accounts first.
+// ListStaff regresa todos los 'administrador' y 'alimentador', primero las cuentas
+// pendientes y después por nombre.
 func ListStaff(pool *pgxpool.Pool) ([]StaffMember, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -77,6 +83,7 @@ func ListStaff(pool *pgxpool.Pool) ([]StaffMember, error) {
 	return staff, rows.Err()
 }
 
+// GetStaffMember regresa la cuenta de personal id. Regresa pgx.ErrNoRows si no existe.
 func GetStaffMember(pool *pgxpool.Pool, id uuid.UUID) (*StaffMember, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -92,7 +99,8 @@ func GetStaffMember(pool *pgxpool.Pool, id uuid.UUID) (*StaffMember, error) {
 	return scanStaff(pool.QueryRow(ctx, query, id))
 }
 
-// CreateStaffMember inserts the user and its admins row in a single statement.
+// CreateStaffMember inserta el usuario y su fila en admins en una sola sentencia y
+// regresa la cuenta creada.
 func CreateStaffMember(pool *pgxpool.Pool, m NewStaffMember) (*StaffMember, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -115,7 +123,8 @@ func CreateStaffMember(pool *pgxpool.Pool, m NewStaffMember) (*StaffMember, erro
 	return GetStaffMember(pool, m.ID)
 }
 
-// UpdateStaffMember changes role, zone and account state. Returns pgx.ErrNoRows if the id is not staff.
+// UpdateStaffMember cambia rol, zona y estado de la cuenta, y regresa la cuenta
+// actualizada. Regresa pgx.ErrNoRows si el id no es personal.
 func UpdateStaffMember(pool *pgxpool.Pool, id uuid.UUID, role string, zoneID *uuid.UUID, accountState string) (*StaffMember, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

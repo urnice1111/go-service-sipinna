@@ -12,17 +12,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// UserType es el tipo de usuario ("citizen", "administrador" o "alimentador").
 type UserType struct {
 	UserType string
 }
 
-// StaffAccess is an admins row with an activated account ('administrador' or 'alimentador').
+// StaffAccess es una fila de admins con la cuenta activada ('administrador' o
+// 'alimentador'). ZoneID es nil cuando no tiene zona asignada.
 type StaffAccess struct {
 	Role   string
 	ZoneID *uuid.UUID
 }
 
-// GetActiveStaff returns pgx.ErrNoRows when the user is not in admins or its account is not activated.
+// GetActiveStaff regresa el rol y la zona del personal userID. Regresa pgx.ErrNoRows
+// si el usuario no está en admins o su cuenta no está activada.
 func GetActiveStaff(pool *pgxpool.Pool, userID uuid.UUID) (*StaffAccess, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -42,7 +45,8 @@ func GetActiveStaff(pool *pgxpool.Pool, userID uuid.UUID) (*StaffAccess, error) 
 	return &staff, nil
 }
 
-// GetUserByContact looks up credentials using either an email or a telephone number.
+// GetUserByContact busca un usuario por correo o por teléfono (un valor vacío se
+// ignora). Solo llena ID, HashedPassword y Name. Regresa pgx.ErrNoRows si no existe.
 func GetUserByContact(pool *pgxpool.Pool, email, telephoneNumber string) (*models.User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -64,7 +68,9 @@ func GetUserByContact(pool *pgxpool.Pool, email, telephoneNumber string) (*model
 	return &user, nil
 }
 
-// GetUserType también regresa el nombre de la zona asignada; vacío para ciudadanos o staff sin zona.
+// GetUserType regresa el tipo de usuario ("citizen" si no está en admins), si es
+// personal con cuenta activada (isAdmin) y el nombre de la zona asignada; este último
+// queda vacío para ciudadanos o staff sin zona.
 func GetUserType(
 	pool *pgxpool.Pool,
 	userID uuid.UUID) (string, bool, string, error) {
@@ -91,6 +97,8 @@ func GetUserType(
 	return userType, isAdmin, zoneName, nil
 }
 
+// CreateUser inserta un ciudadano (filas en usuarios y ciudadanos) en una sola
+// sentencia. Llena en user las fechas de creación y actualización.
 func CreateUser(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 	var ctx context.Context
 	var cancel context.CancelFunc
@@ -143,6 +151,8 @@ func CreateUser(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 
 }
 
+// CreateAdmin inserta una cuenta de personal (filas en usuarios y admins) con el rol
+// user.Role. La cuenta queda con el estado por defecto de la tabla (pendiente).
 func CreateAdmin(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 	var ctx context.Context
 	var cancel context.CancelFunc
@@ -194,6 +204,9 @@ func CreateAdmin(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 	return user, nil
 }
 
+// ActivateAdminAccount cambia la cuenta de personal adminID de "pendiente" a
+// "activada" y regresa el nuevo estado. Regresa pgx.ErrNoRows si la cuenta no existe o
+// no estaba pendiente.
 func ActivateAdminAccount(pool *pgxpool.Pool, adminID uuid.UUID) (string, error) {
 	var ctx context.Context
 	var cancel context.CancelFunc

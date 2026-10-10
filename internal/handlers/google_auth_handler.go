@@ -18,12 +18,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// GoogleLoginRequest es el cuerpo de POST /auth/google.
 type GoogleLoginRequest struct {
 	// access_token de la sesión de Supabase que obtuvo el frontend tras el login con Google
 	AccessToken string `json:"access_token" binding:"required"`
 }
 
-// Campos que se usan de GET {SUPABASE_URL}/auth/v1/user
+// supabaseUser son los campos que se usan de GET {SUPABASE_URL}/auth/v1/user.
 type supabaseUser struct {
 	Email            string `json:"email"`
 	EmailConfirmedAt string `json:"email_confirmed_at"`
@@ -33,11 +34,18 @@ type supabaseUser struct {
 	} `json:"user_metadata"`
 }
 
+// errInvalidSupabaseToken indica que Supabase rechazó el token (401/403).
 var errInvalidSupabaseToken = errors.New("invalid supabase token")
 
+// supabaseHTTPClient es el cliente HTTP para llamar a Supabase Auth.
 var supabaseHTTPClient = &http.Client{Timeout: 5 * time.Second}
 
-// GoogleLoginHandler cambia la sesión de Supabase (Google) por la cookie de sesión propia.
+// GoogleLoginHandler maneja POST /auth/google: cambia la sesión de Supabase (Google)
+// por la cookie de sesión propia.
+//
+// Si no existe una cuenta con el correo de Google, crea un ciudadano nuevo. Responde
+// 401 si el token no es válido o el correo no está verificado, 502 si no se pudo
+// contactar a Supabase y 500 si el login con Google no está configurado.
 func GoogleLoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if cfg.SupabaseURL == "" || cfg.SupabaseAnonKey == "" {
@@ -115,6 +123,9 @@ func fetchSupabaseUser(ctx context.Context, cfg *config.Config, accessToken stri
 	return &user, nil
 }
 
+// createGoogleCitizen registra un ciudadano con el correo y el nombre de la cuenta de
+// Google; si no hay nombre, usa la parte local del correo.
+//
 // Las cuentas creadas con Google no tienen contraseña: password_hash queda vacío y el login
 // con contraseña siempre falla hasta que el usuario defina una con "Olvidé mi contraseña".
 func createGoogleCitizen(pool *pgxpool.Pool, email string, googleUser *supabaseUser) (*models.User, error) {

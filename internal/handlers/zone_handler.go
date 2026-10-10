@@ -8,7 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// GetZones returns every zone to 'administrador'; 'alimentador' only gets its assigned zone.
+// GetZones maneja GET /zones: regresa todas las zonas al 'administrador'; el
+// 'alimentador' solo recibe su zona asignada.
 func GetZones(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		_, scopeZoneID, ok := requireActiveStaff(c, pool)

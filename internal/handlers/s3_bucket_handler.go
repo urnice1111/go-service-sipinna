@@ -20,13 +20,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// S3Uploader handles uploads to AWS S3
+// S3Uploader sube y borra objetos en un bucket de AWS S3.
 type S3Uploader struct {
 	client     *s3.Client
 	bucketName string
 }
 
-// NewS3Uploader creates a new S3 uploader
+// NewS3Uploader crea un S3Uploader para bucketName con la configuración por defecto
+// de AWS (variables de entorno, ~/.aws/credentials o rol de la instancia).
 func NewS3Uploader(bucketName string) (*S3Uploader, error) {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
@@ -39,6 +40,8 @@ func NewS3Uploader(bucketName string) (*S3Uploader, error) {
 	}, nil
 }
 
+// generateUniqueFilename genera un nombre "<fecha-hora>-<16 hex aleatorios><ext>"
+// conservando la extensión de originalName.
 func generateUniqueFilename(originalName string) string {
 	ext := filepath.Ext(originalName)
 
@@ -51,7 +54,8 @@ func generateUniqueFilename(originalName string) string {
 	return fmt.Sprintf("%s-%s%s", timestamp, randomStr, ext)
 }
 
-// Upload sends a file to S3
+// Upload sube file a S3 con la llave key. El Content-Type se detecta a partir de los
+// primeros 512 bytes del archivo. Regresa la URL pública del objeto.
 func (u *S3Uploader) Upload(ctx context.Context, file *multipart.FileHeader, key string) (string, error) {
 	src, err := file.Open()
 	if err != nil {
@@ -87,7 +91,7 @@ func (u *S3Uploader) Upload(ctx context.Context, file *multipart.FileHeader, key
 	return fmt.Sprintf("https://%s.s3.amazonaws.com/%s", u.bucketName, key), nil
 }
 
-// Delete removes an object from S3
+// Delete borra de S3 el objeto con la llave key.
 func (u *S3Uploader) Delete(ctx context.Context, key string) error {
 	_, err := u.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(u.bucketName),
@@ -99,7 +103,12 @@ func (u *S3Uploader) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// UploadToS3 handles multiple S3 uploads.
+// UploadToS3 maneja PUT /report/:report_id/images/:image_id: recibe el archivo en el
+// campo multipart "file", lo sube a S3 con la llave que se registró en
+// [RegisterImagesRows] y marca la imagen como "registrado".
+//
+// Si la imagen ya estaba subida responde 200 sin volver a subirla. La respuesta
+// siempre es un [models.ResponseS3].
 func UploadToS3(uploader *S3Uploader, pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var response models.ResponseS3

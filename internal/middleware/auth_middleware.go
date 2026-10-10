@@ -12,10 +12,22 @@ import (
 	"github.com/google/uuid"
 )
 
+// AuthRequired es igual que [AuthMiddleware], pero lee el secreto directamente de la
+// variable de entorno JWT_SECRET en lugar de recibir la configuración.
 func AuthRequired() gin.HandlerFunc {
 	return authRequired(os.Getenv("JWT_SECRET"))
 }
 
+// AuthMiddleware exige una sesión válida en la cookie "session_token".
+//
+// Si el token es válido, deja en el contexto de Gin:
+//   - "user": todos los claims ([jwt.MapClaims])
+//   - "user_id": id del usuario (string con un UUID)
+//   - "is_admin": true si es personal con cuenta activada (bool)
+//   - "user_type": "citizen", "administrador" o "alimentador" (string)
+//
+// Si falta la cookie o el token no es válido, aborta con 401. Si cfg es nil o no
+// tiene JWTSecret, aborta con 500.
 func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	if cfg == nil {
 		return authRequired("")
@@ -23,6 +35,7 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 	return authRequired(cfg.JWTSecret)
 }
 
+// authRequired construye el middleware de autenticación con el secreto indicado.
 func authRequired(jwtSecret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if strings.TrimSpace(jwtSecret) == "" {
@@ -70,6 +83,8 @@ func authRequired(jwtSecret string) gin.HandlerFunc {
 	}
 }
 
+// validateJWT verifica la firma HS256 de tokenStr con jwtSecret y que el token tenga
+// una expiración ("exp") vigente. Regresa los claims si el token es válido.
 func validateJWT(tokenStr, jwtSecret string) (jwt.MapClaims, error) {
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (any, error) {
 		return []byte(jwtSecret), nil

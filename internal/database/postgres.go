@@ -7,6 +7,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// Connect crea un pool de conexiones a PostgreSQL a partir de databaseURL y verifica
+// la conexión con un ping. Si el ping falla, cierra el pool y regresa el error.
+// El llamador es responsable de cerrar el pool con [pgxpool.Pool.Close].
 func Connect(databaseURL string) (*pgxpool.Pool, error) {
 	var ctx context.Context = context.Background()
 

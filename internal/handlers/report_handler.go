@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// CreateReport es el cuerpo de POST /report.
 type CreateReport struct {
 	Description      string  `json:"description" db:"descripcion"`
 	Latitude         float32 `json:"latitude" db:"latitud"`
@@ -27,6 +28,12 @@ type CreateReport struct {
 	SightingTime     string  `json:"sighting_time" db:"horario_avistamiento"`
 }
 
+// CreateReportHandler maneja POST /report: crea un reporte a nombre del usuario de
+// la sesión. La zona y el folio (RIETI-<MUNICIPIO>-<AÑO>-<consecutivo>) se asignan
+// en la base de datos según la zona más cercana a las coordenadas.
+//
+// El reporte nace como borrador; se envía con [UpdateReport] cuando terminan de
+// subirse sus fotos. Responde 200 con {"reporte_id": <uuid>}.
 func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString("user_id")
@@ -77,6 +84,12 @@ func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc
 
 }
 
+// RegisterImagesRows maneja POST /report/:report_id/images: registra en
+// imagenes_reporte una fila "pendiente" por cada imagen del cuerpo
+// ([models.ImagesRequest]) y le asigna una llave única en S3.
+//
+// Responde 200 con {"success": [<id de imagen>, ...]}; con esos ids el cliente sube
+// cada archivo mediante [UploadToS3].
 func RegisterImagesRows(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		reportID := c.Param("report_id")
@@ -109,6 +122,9 @@ func RegisterImagesRows(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+// GetReportsByZone maneja GET /report/zone/:zone_id: regresa los reportes de una
+// zona, identificada por su id o por el nombre del municipio. Solo para personal
+// activo; a un alimentador además se le limita a su propia zona.
 func GetReportsByZone(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var zoneID string = c.Param("zone_id")
@@ -138,7 +154,8 @@ func GetReportsByZone(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
-// GetAllReports returns every report to 'administrador' and 'alimentador' only gets its assigned zone.
+// GetAllReports maneja GET /report/all: regresa todos los reportes al 'administrador';
+// el 'alimentador' solo recibe los de su zona asignada.
 func GetAllReports(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		_, scopeZoneID, ok := requireActiveStaff(c, pool)
@@ -156,6 +173,8 @@ func GetAllReports(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+// GetUsersReports maneja GET /report: regresa el resumen de los reportes creados por
+// el usuario de la sesión ([models.IndividualReportInfoBrief]).
 func GetUsersReports(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString("user_id")
@@ -177,11 +196,15 @@ func GetUsersReports(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+// UpdateReportStatusRequest es el cuerpo de PATCH /report/:folio/status.
+// Reason (motivo) es obligatorio para los estados de reportStatusesRequiringReason.
 type UpdateReportStatusRequest struct {
 	Status string `json:"estado" binding:"required"`
 	Reason string `json:"motivo"`
 }
 
+// validReportStatuses son los estados a los que el personal puede mover un reporte
+// (valores del enum report_status, excepto DRAFT).
 var validReportStatuses = map[string]bool{
 	"registrado":     true,
 	"en_revision":    true,
@@ -193,12 +216,18 @@ var validReportStatuses = map[string]bool{
 	"reincidente":    true,
 }
 
+// reportStatusesRequiringReason son los estados que exigen un motivo al asignarse.
 var reportStatusesRequiringReason = map[string]bool{
 	"cancelado":   true,
 	"archivado":   true,
 	"reincidente": true,
 }
 
+// UpdateReportStatusHandler maneja PATCH /report/:folio/status: agrega un nuevo
+// estado al historial del reporte. Solo para personal activo y dentro de su zona.
+//
+// Responde 400 si el estado no es válido o falta el motivo, 404 si el reporte no
+// existe o está fuera de la zona, y 409 si el reporte ya tiene ese estado.
 func UpdateReportStatusHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		staffID, scopeZoneID, ok := requireActiveStaff(c, pool)
@@ -249,9 +278,10 @@ func UpdateReportStatusHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
-// requireActiveStaff checks against the db that the user is an activated 'administrador' or
-// 'alimentador'. It returns the user id and the zone the user is restricted to (nil for
-// 'administrador'). When it returns false the error response has already been written.
+// requireActiveStaff verifica en la base de datos que el usuario de la sesión sea un
+// 'administrador' o 'alimentador' con cuenta activada. Regresa su id y la zona a la que
+// está restringido (nil para 'administrador'). Si regresa false, la respuesta de error
+// ya se escribió y el handler solo debe terminar.
 func requireActiveStaff(c *gin.Context, pool *pgxpool.Pool) (uuid.UUID, *uuid.UUID, bool) {
 	userID, err := uuid.Parse(c.GetString("user_id"))
 	if err != nil {
@@ -328,6 +358,11 @@ func GetReportByFolioHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+// DeleteReportHandler maneja DELETE /report/:folio: elimina el reporte, su historial,
+// comentarios e imágenes, y después borra las fotos de S3. Solo para personal activo y
+// dentro de su zona.
+//
+// Si alguna foto no se puede borrar de S3 solo se registra en el log. Responde 204.
 func DeleteReportHandler(pool *pgxpool.Pool, uploader *S3Uploader) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		_, scopeZoneID, ok := requireActiveStaff(c, pool)
@@ -361,6 +396,9 @@ func DeleteReportHandler(pool *pgxpool.Pool, uploader *S3Uploader) gin.HandlerFu
 	}
 }
 
+// UpdateReport maneja PUT /report/:report_id/submit: envía el reporte, es decir, lo
+// pasa del borrador al estado "registrado". Falla si alguna de sus imágenes sigue
+// pendiente de subir. Una vez enviado, el worker de análisis lo evalúa.
 func UpdateReport(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		reportID := c.Param("report_id")
