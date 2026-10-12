@@ -133,6 +133,10 @@ func UploadToS3(uploader *S3Uploader, pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
+		if !requireReportEditor(c, pool, reportID) {
+			return
+		}
+
 		image, err := repository.GetImage(pool, reportID, imageID)
 		if err != nil {
 			response.Status = "image_not_found"

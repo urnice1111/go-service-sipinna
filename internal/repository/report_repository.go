@@ -21,9 +21,10 @@ import (
 // anónimo). La zona se elige en la base de datos como la más cercana a las
 // coordenadas (distancia haversine) y el folio se arma con su municipio.
 //
+// tempKey es la llave de edición del borrador anónimo; es nil si el reporte tiene dueño.
 // Solo se llena r.ID con el id que regresa la base de datos. Regresa pgx.ErrNoRows si
 // no hay ninguna zona con coordenadas.
-func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string) (*models.Report, error) {
+func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tempKey *uuid.UUID) (*models.Report, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
 	defer cancel()
@@ -80,7 +81,8 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string) (*m
 		edad_ninos, 
 		tipo_trabajo, 
 		horario_avistamiento,
-		zona_id)
+		zona_id,
+		temp_key)
 	SELECT
 				FORMAT(
 					'RIETI-%s-%s-%s',
@@ -96,7 +98,8 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string) (*m
 				$6,
 				$7,
 				$8,
-				id
+				id,
+				$9
 			FROM ubicacion_cercana
 			RETURNING id
 	)
@@ -114,6 +117,7 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string) (*m
 		r.ChildrenAge,
 		r.WorkType,
 		r.SightingTime,
+		tempKey,
 	).Scan(
 		&r.ID,
 	)
@@ -576,31 +580,75 @@ func generateUniqueFilename(ext string) string {
 
 }
 
+// ReportAccess es lo que se revisa antes de agregar imágenes o enviar un reporte.
+type ReportAccess struct {
+	CitizenID *uuid.UUID
+	TempKey   *uuid.UUID
+	Status    string
+}
+
+// GetReportAccess regresa el dueño, la llave temporal y el último estado del reporte.
+// Regresa pgx.ErrNoRows si el reporte no existe.
+func GetReportAccess(pool *pgxpool.Pool, reportID string) (*ReportAccess, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const query = `
+	SELECT
+		r.ciudadano_id,
+		r.temp_key,
+		COALESCE(he.estado::text, 'DRAFT')
+	FROM reportes AS r
+	LEFT JOIN LATERAL (
+		SELECT h.estado
+		FROM historial_estados AS h
+		WHERE h.reporte_id = r.id
+		ORDER BY h.changed_at DESC, h.id DESC
+		LIMIT 1
+	) AS he ON TRUE
+	WHERE r.id = $1
+	`
+
+	var access ReportAccess
+	err := pool.QueryRow(ctx, query, reportID).Scan(&access.CitizenID, &access.TempKey, &access.Status)
+	if err != nil {
+		return nil, err
+	}
+
+	return &access, nil
+}
+
 // UpdateReportDraft envía el reporte reportID: agrega el estado "registrado" a su
-// historial siempre que ninguna de sus imágenes siga "pendiente". Regresa un error si
-// el reporte no existe o aún tiene imágenes pendientes.
+// historial siempre que ninguna de sus imágenes siga "pendiente", y borra temp_key.
+// Regresa un error si el reporte no existe o aún tiene imágenes pendientes.
 func UpdateReportDraft(pool *pgxpool.Pool, reportID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	query := `
-		INSERT INTO historial_estados (
-			reporte_id,
-			estado,
-			motivo
+		WITH submitted AS (
+			INSERT INTO historial_estados (
+				reporte_id,
+				estado,
+				motivo
+			)
+			SELECT
+				r.id,
+				'registrado',
+				'Todas las imágenes fueron procesadas'
+			FROM reportes r
+			WHERE r.id = $1
+			AND NOT EXISTS (
+				SELECT 1
+				FROM imagenes_reporte ir
+				WHERE ir.reporte_id = r.id
+				  AND ir.estado = 'pendiente'
+			)
+			RETURNING reporte_id
 		)
-		SELECT
-			r.id,
-			'registrado',
-			'Todas las imágenes fueron procesadas'
-		FROM reportes r
-		WHERE r.id = $1
-		AND NOT EXISTS (
-			SELECT 1
-			FROM imagenes_reporte ir
-			WHERE ir.reporte_id = r.id
-			  AND ir.estado = 'pendiente'
-		);
+		UPDATE reportes
+		SET temp_key = NULL
+		WHERE id IN (SELECT reporte_id FROM submitted);
 	`
 
 	result, err := pool.Exec(ctx, query, reportID)
@@ -614,7 +662,6 @@ func UpdateReportDraft(pool *pgxpool.Pool, reportID string) error {
 
 	return nil
 }
-
 
 // GetPresignedURL genera una URL prefirmada de GET para objectKey en bucketName,
 // válida durante lifetimeDuration. Usa la configuración por defecto de AWS.
@@ -642,4 +689,3 @@ func GetPresignedURL(bucketName string, objectKey string, lifetimeDuration time.
 	// 4. Return the complete signed URL string
 	return presignedReq.URL, nil
 }
-

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"go-service-sipinna/internal/config"
+	"go-service-sipinna/internal/middleware"
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
 	"go-service-sipinna/internal/resend"
@@ -28,12 +29,14 @@ type CreateReport struct {
 	SightingTime     string  `json:"sighting_time" db:"horario_avistamiento"`
 }
 
-// CreateReportHandler maneja POST /report: crea un reporte a nombre del usuario de
-// la sesión. La zona y el folio (RIETI-<MUNICIPIO>-<AÑO>-<consecutivo>) se asignan
-// en la base de datos según la zona más cercana a las coordenadas.
+// CreateReportHandler maneja POST /report. Con sesión, el reporte queda a nombre del
+// usuario y responde {"reporte_id": <uuid>}. Sin cookie, el reporte es anónimo y la
+// respuesta también incluye "edit_token". La zona y el folio
+// (RIETI-<MUNICIPIO>-<AÑO>-<consecutivo>) se asignan en la base de datos según la
+// zona más cercana a las coordenadas.
 //
 // El reporte nace como borrador; se envía con [UpdateReport] cuando terminan de
-// subirse sus fotos. Responde 200 con {"reporte_id": <uuid>}.
+// subirse sus fotos.
 func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString("user_id")
@@ -71,14 +74,27 @@ func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc
 			SightingTime:     req.SightingTime,
 		}
 
-		newReport, err := repository.CreateReport(pool, report, &userID)
+		var citizenID *string
+		var tempKey *uuid.UUID
+		if userID != "" {
+			citizenID = &userID
+		} else {
+			key := uuid.New()
+			tempKey = &key
+		}
+
+		newReport, err := repository.CreateReport(pool, report, citizenID, tempKey)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"reporte_id": newReport.ID})
+		body := gin.H{"reporte_id": newReport.ID}
+		if tempKey != nil {
+			body["edit_token"] = tempKey.String()
+		}
+		c.JSON(http.StatusOK, body)
 
 	}
 
@@ -96,6 +112,10 @@ func RegisterImagesRows(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		if reportID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "You must provide a valid report id"})
+			return
+		}
+
+		if !requireReportEditor(c, pool, reportID) {
 			return
 		}
 
@@ -278,6 +298,52 @@ func UpdateReportStatusHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+// requireReportEditor permite editar el reporte a su dueño o, si es anónimo y sigue
+// en DRAFT, a quien envíe el header X-Edit-Token igual a temp_key. Si regresa false,
+// la respuesta de error ya se escribió y el handler solo debe terminar.
+func requireReportEditor(c *gin.Context, pool *pgxpool.Pool, reportID string) bool {
+	access, err := repository.GetReportAccess(pool, reportID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
+		return false
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify report access"})
+		return false
+	}
+
+	if access.CitizenID != nil {
+		userID, err := middleware.UserIDFromRequest(c)
+		if errors.Is(err, middleware.ErrJWTNotConfigured) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT secret is not configured"})
+			return false
+		}
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return false
+		}
+		if userID != *access.CitizenID {
+			c.JSON(http.StatusForbidden, gin.H{"error": "you can only edit your own reports"})
+			return false
+		}
+		return true
+	}
+
+	token := strings.TrimSpace(c.GetHeader("X-Edit-Token"))
+	if token == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "edit token is required"})
+		return false
+	}
+
+	tokenID, err := uuid.Parse(token)
+	if err != nil || access.TempKey == nil || access.Status != "DRAFT" || tokenID != *access.TempKey {
+		c.JSON(http.StatusForbidden, gin.H{"error": "invalid edit token"})
+		return false
+	}
+
+	return true
+}
+
 // requireActiveStaff verifica en la base de datos que el usuario de la sesión sea un
 // 'administrador' o 'alimentador' con cuenta activada. Regresa su id y la zona a la que
 // está restringido (nil para 'administrador'). Si regresa false, la respuesta de error
@@ -407,6 +473,10 @@ func UpdateReport(pool *pgxpool.Pool) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "No report ID provided",
 			})
+			return
+		}
+
+		if !requireReportEditor(c, pool, reportID) {
 			return
 		}
 

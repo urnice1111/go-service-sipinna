@@ -1,5 +1,6 @@
 BEGIN;
-    ALTER TABLE reportes
-    DROP COLUMN temp_key;
-COMMIT;
 
+ALTER TABLE reportes
+ADD COLUMN temp_key uuid;
+
+COMMIT;

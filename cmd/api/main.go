@@ -110,7 +110,7 @@ func main() {
 			"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS",
 		},
 		AllowHeaders: []string{
-			"Origin", "Content-Type", "Authorization",
+			"Origin", "Content-Type", "Authorization", "X-Edit-Token",
 		},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
@@ -151,19 +151,20 @@ func main() {
 	}
 
 	report := router.Group("/report")
-	report.Use(middleware.AuthRequired())
-	{
-		report.POST("", handlers.CreateReportHandler(pool, cfg))
-		report.GET("", handlers.GetUsersReports(pool))
-		report.GET("/all", handlers.GetAllReports(pool))
-		report.GET("/zone/:zone_id", handlers.GetReportsByZone(pool))
-		report.GET("/:folio", handlers.GetReportByFolioHandler(pool))
-		report.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))
-		report.DELETE("/:folio", handlers.DeleteReportHandler(pool, uploader))
+	report.POST("", middleware.OptionalAuth(), handlers.CreateReportHandler(pool, cfg))
+	report.POST("/:report_id/images", handlers.RegisterImagesRows(pool))
+	report.PUT("/:report_id/images/:image_id", handlers.UploadToS3(uploader, pool))
+	report.PUT("/:report_id/submit", handlers.UpdateReport(pool))
 
-		report.POST("/:report_id/images", handlers.RegisterImagesRows(pool))
-		report.PUT("/:report_id/images/:image_id", handlers.UploadToS3(uploader, pool))
-		report.PUT("/:report_id/submit", handlers.UpdateReport(pool))
+	authedReport := report.Group("")
+	authedReport.Use(middleware.AuthRequired())
+	{
+		authedReport.GET("", handlers.GetUsersReports(pool))
+		authedReport.GET("/all", handlers.GetAllReports(pool))
+		authedReport.GET("/zone/:zone_id", handlers.GetReportsByZone(pool))
+		authedReport.GET("/:folio", handlers.GetReportByFolioHandler(pool))
+		authedReport.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))
+		authedReport.DELETE("/:folio", handlers.DeleteReportHandler(pool, uploader))
 	}
 
 	router.Run(":" + cfg.Port)
