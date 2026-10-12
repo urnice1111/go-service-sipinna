@@ -7,7 +7,6 @@ import (
 	"go-service-sipinna/internal/middleware"
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
-	"go-service-sipinna/internal/resend"
 	"log"
 	"net/http"
 	"strings"
@@ -46,8 +45,6 @@ func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc
 		} else {
 			fmt.Println("si existe")
 		}
-
-		resend.SendMessage(cfg, "emilianogarram2910@gmail.com")
 
 		fmt.Println(userID)
 		var req CreateReport

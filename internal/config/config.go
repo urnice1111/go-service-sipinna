@@ -25,6 +25,9 @@ type Config struct {
 	TypeSafeAPIKey string
 	// API key de Resend para enviar correos (SIPINNA_RESEND_API_KEY)
 	SipinnaResendAPIKey string
+	// Remitente de los correos (SIPINNA_RESEND_FROM, opcional). Por defecto
+	// "SIPINNA <no-reply@sipinna.com>"; el dominio debe estar verificado en Resend.
+	SipinnaResendFrom string
 	// Proyecto de Supabase usado solo para validar los inicios de sesión con Google
 	SupabaseURL     string
 	SupabaseAnonKey string
@@ -46,6 +49,7 @@ func Load() (*Config, error) {
 		FrontendURL:         os.Getenv("FRONTEND_URL"),
 		TypeSafeAPIKey:      os.Getenv("TYPESAFE_API_KEY"),
 		SipinnaResendAPIKey: os.Getenv("SIPINNA_RESEND_API_KEY"),
+		SipinnaResendFrom:   os.Getenv("SIPINNA_RESEND_FROM"),
 		SupabaseURL:         strings.TrimRight(strings.TrimSpace(os.Getenv("SUPABASE_URL")), "/"),
 		SupabaseAnonKey:     strings.TrimSpace(os.Getenv("SUPABASE_ANON_KEY")),
 	}
