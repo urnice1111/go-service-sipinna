@@ -1,15 +1,18 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/middleware"
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
+	"go-service-sipinna/internal/resend"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -462,7 +465,7 @@ func DeleteReportHandler(pool *pgxpool.Pool, uploader *S3Uploader) gin.HandlerFu
 // UpdateReport maneja PUT /report/:report_id/submit: envía el reporte, es decir, lo
 // pasa del borrador al estado "registrado". Falla si alguna de sus imágenes sigue
 // pendiente de subir. Una vez enviado, el worker de análisis lo evalúa.
-func UpdateReport(pool *pgxpool.Pool) gin.HandlerFunc {
+func UpdateReport(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		reportID := c.Param("report_id")
 
@@ -479,7 +482,7 @@ func UpdateReport(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		fmt.Println(reportID)
 
-		err := repository.UpdateReportDraft(pool, reportID)
+		zoneID, err := repository.UpdateReportDraft(pool, reportID)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -488,7 +491,26 @@ func UpdateReport(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
+		go SendNotifications(pool, cfg, zoneID.String())
+
 		c.JSON(http.StatusOK, true)
 
+	}
+}
+
+func SendNotifications(pool *pgxpool.Pool, cfg *config.Config, zoneID string) {
+	alimentadores, err := repository.GetAllAlimentadores(pool, zoneID)
+	if err != nil {
+		log.Printf("could not list alimentadores for zone %s: %v", zoneID, err)
+		return
+	}
+	for _, alimentador := range *alimentadores {
+		go func(name, email string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			if err := resend.SendOneNotification(ctx, cfg, name, email); err != nil {
+				log.Printf("could not notify %s: %v", email, err)
+			}
+		}(alimentador.Name, alimentador.Email)
 	}
 }

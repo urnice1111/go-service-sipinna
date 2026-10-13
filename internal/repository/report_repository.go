@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -621,10 +622,9 @@ func GetReportAccess(pool *pgxpool.Pool, reportID string) (*ReportAccess, error)
 // UpdateReportDraft envía el reporte reportID: agrega el estado "registrado" a su
 // historial siempre que ninguna de sus imágenes siga "pendiente", y borra temp_key.
 // Regresa un error si el reporte no existe o aún tiene imágenes pendientes.
-func UpdateReportDraft(pool *pgxpool.Pool, reportID string) error {
+func UpdateReportDraft(pool *pgxpool.Pool, reportID string) (uuid.UUID, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
 	query := `
 		WITH submitted AS (
 			INSERT INTO historial_estados (
@@ -648,19 +648,65 @@ func UpdateReportDraft(pool *pgxpool.Pool, reportID string) error {
 		)
 		UPDATE reportes
 		SET temp_key = NULL
-		WHERE id IN (SELECT reporte_id FROM submitted);
+		WHERE id IN (SELECT reporte_id FROM submitted)
+		RETURNING zona_id;
 	`
 
-	result, err := pool.Exec(ctx, query, reportID)
+	var zoneID uuid.UUID
+	err := pool.QueryRow(ctx, query, reportID).Scan(&zoneID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, fmt.Errorf("reporte no encontrado o todavía tiene imágenes pendientes")
+	}
 	if err != nil {
-		return err
+		return uuid.Nil, err
+	}
+	return zoneID, nil
+}
+
+func GetAllAlimentadores(pool *pgxpool.Pool, zoneID string) (*[]models.AlimentadorForEmail, error) {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+
+	defer cancel()
+
+	var query = `
+		select u.nombre, u.email from admins a
+		inner join usuarios u on a.id = u.id
+		where zona_id = $1 and a.estado_cuenta = 'activada';
+	`
+
+	rows, err := pool.Query(ctx, query, zoneID)
+
+	if err != nil {
+		return nil, err
 	}
 
-	if result.RowsAffected() == 0 {
-		return fmt.Errorf("reporte no encontrado o todavía tiene imágenes pendientes")
+	var Alimentadores []models.AlimentadorForEmail
+
+	for rows.Next() {
+		var name string
+		var email string
+
+		if err := rows.Scan(&name, &email); err != nil {
+			return nil, err
+		}
+
+		var temp models.AlimentadorForEmail
+
+		temp.Name = name
+		temp.Email = email
+
+		fmt.Println(temp)
+
+		Alimentadores = append(Alimentadores, temp)
+
 	}
 
-	return nil
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &Alimentadores, nil
 }
 
 // GetPresignedURL genera una URL prefirmada de GET para objectKey en bucketName,
