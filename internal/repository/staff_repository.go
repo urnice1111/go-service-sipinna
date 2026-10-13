@@ -19,32 +19,32 @@ type StaffMember struct {
 	ZoneID          *uuid.UUID `json:"zona_id"`
 	ZoneName        string     `json:"zona_nombre"`
 	AccountState    string     `json:"estado_cuenta"`
-	CreatedAt       time.Time  `json:"created_at"`
+	// InvitationPending es true si la cuenta todavía no acepta su invitación (no tiene contraseña).
+	InvitationPending bool      `json:"invitacion_pendiente"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // NewStaffMember son los datos para dar de alta personal con [CreateStaffMember].
-// HashedPassword ya debe venir con hash bcrypt.
+// La cuenta nace sin contraseña; la define el invitado al aceptar su invitación.
 type NewStaffMember struct {
 	ID              uuid.UUID
 	Name            string
 	Email           *string
 	TelephoneNumber *string
-	HashedPassword  string
 	Role            string
 	ZoneID          *uuid.UUID
-	AccountState    string
 }
 
 // staffColumns son las columnas que lee scanStaff, en el mismo orden.
 const staffColumns = `
 	u.id, COALESCE(u.nombre, ''), u.email, u.telefono, a.rol::text, a.zona_id,
-	COALESCE(z.nombre, ''), a.estado_cuenta::text, u.created_at
+	COALESCE(z.nombre, ''), a.estado_cuenta::text, u.password_hash IS NULL, u.created_at
 `
 
 // scanStaff lee una fila con las columnas de staffColumns. Acepta tanto pgx.Row como pgx.Rows.
 func scanStaff(row interface{ Scan(...any) error }) (*StaffMember, error) {
 	var s StaffMember
-	err := row.Scan(&s.ID, &s.Name, &s.Email, &s.TelephoneNumber, &s.Role, &s.ZoneID, &s.ZoneName, &s.AccountState, &s.CreatedAt)
+	err := row.Scan(&s.ID, &s.Name, &s.Email, &s.TelephoneNumber, &s.Role, &s.ZoneID, &s.ZoneName, &s.AccountState, &s.InvitationPending, &s.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -99,23 +99,23 @@ func GetStaffMember(pool *pgxpool.Pool, id uuid.UUID) (*StaffMember, error) {
 	return scanStaff(pool.QueryRow(ctx, query, id))
 }
 
-// CreateStaffMember inserta el usuario y su fila en admins en una sola sentencia y
-// regresa la cuenta creada.
+// CreateStaffMember inserta el usuario (sin contraseña) y su fila en admins como
+// 'pendiente' en una sola sentencia, y regresa la cuenta creada.
 func CreateStaffMember(pool *pgxpool.Pool, m NewStaffMember) (*StaffMember, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	const query = `
 		WITH nuevo_usuario AS (
-			INSERT INTO usuarios (id, nombre, telefono, email, password_hash)
-			VALUES ($1, $2, NULLIF(BTRIM($3), ''), NULLIF(BTRIM($4), ''), $5)
+			INSERT INTO usuarios (id, nombre, telefono, email)
+			VALUES ($1, $2, NULLIF(BTRIM($3), ''), NULLIF(BTRIM($4), ''))
 			RETURNING id
 		)
 		INSERT INTO admins (id, rol, zona_id, estado_cuenta)
-		SELECT id, $6::admin_role, $7, $8::account_status FROM nuevo_usuario
+		SELECT id, $5::admin_role, $6, 'pendiente' FROM nuevo_usuario
 	`
 
-	_, err := pool.Exec(ctx, query, m.ID, m.Name, m.TelephoneNumber, m.Email, m.HashedPassword, m.Role, m.ZoneID, m.AccountState)
+	_, err := pool.Exec(ctx, query, m.ID, m.Name, m.TelephoneNumber, m.Email, m.Role, m.ZoneID)
 	if err != nil {
 		return nil, err
 	}

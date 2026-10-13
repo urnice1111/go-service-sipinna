@@ -46,13 +46,15 @@ func GetActiveStaff(pool *pgxpool.Pool, userID uuid.UUID) (*StaffAccess, error) 
 }
 
 // GetUserByContact busca un usuario por correo o por teléfono (un valor vacío se
-// ignora). Solo llena ID, HashedPassword y Name. Regresa pgx.ErrNoRows si no existe.
+// ignora). Solo llena ID, HashedPassword y Name; ambos quedan vacíos si son NULL (por
+// ejemplo, una cuenta invitada todavía no tiene contraseña). Regresa pgx.ErrNoRows si
+// no existe.
 func GetUserByContact(pool *pgxpool.Pool, email, telephoneNumber string) (*models.User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	const query = `
-		SELECT id, password_hash, nombre
+		SELECT id, COALESCE(password_hash, ''), COALESCE(nombre, '')
 		FROM usuarios
 		WHERE (email = NULLIF($1, '') OR telefono = NULLIF($2, ''))
 	`
@@ -148,87 +150,4 @@ func CreateUser(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
 	}
 
 	return user, nil
-
-}
-
-// CreateAdmin inserta una cuenta de personal (filas en usuarios y admins) con el rol
-// user.Role. La cuenta queda con el estado por defecto de la tabla (pendiente).
-func CreateAdmin(pool *pgxpool.Pool, user *models.User) (*models.User, error) {
-	var ctx context.Context
-	var cancel context.CancelFunc
-
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-
-	defer cancel()
-
-	const queryCrearAdmin = `
-		WITH nuevo_usuario AS (
-			INSERT INTO usuarios (id, nombre, telefono, email, password_hash)
-			VALUES (
-				$1,
-				$2,
-				NULLIF(BTRIM($3), ''),
-				NULLIF(BTRIM($4), ''),
-				$5
-			)
-			RETURNING id, nombre, email, created_at, updated_at
-		),
-		nuevo_admin AS (
-			INSERT INTO admins (id, rol)
-			SELECT id, $6 FROM nuevo_usuario
-		)
-		SELECT id, nombre, email, created_at, updated_at FROM nuevo_usuario;
-	`
-
-	var err = pool.QueryRow(
-		ctx,
-		queryCrearAdmin,
-		user.ID,
-		user.Name,
-		user.TelephoneNumber,
-		user.Email,
-		user.HashedPassword,
-		user.Role,
-	).Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.CreatedAt,
-		&user.UpdatedAt,
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return user, nil
-}
-
-// ActivateAdminAccount cambia la cuenta de personal adminID de "pendiente" a
-// "activada" y regresa el nuevo estado. Regresa pgx.ErrNoRows si la cuenta no existe o
-// no estaba pendiente.
-func ActivateAdminAccount(pool *pgxpool.Pool, adminID uuid.UUID) (string, error) {
-	var ctx context.Context
-	var cancel context.CancelFunc
-
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
-
-	defer cancel()
-
-	const query = `
-	UPDATE admins
-	SET estado_cuenta = 'activada'
-	WHERE id = $1
-		AND estado_cuenta = 'pendiente'
-	RETURNING estado_cuenta
-	`
-	var accountStatus string
-	err := pool.QueryRow(ctx, query, adminID).Scan(&accountStatus)
-
-	if err != nil {
-		return "", err
-	}
-
-	return accountStatus, nil
-
 }

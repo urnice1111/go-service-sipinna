@@ -8,17 +8,19 @@
 // Rutas principales:
 //
 //	POST   /auth/citizen                   registro de ciudadano
-//	POST   /auth/admin                     registro de personal
 //	POST   /auth/login                     inicio de sesión con contraseña
 //	POST   /auth/google                    inicio de sesión con Google (Supabase)
 //	POST   /auth/logout                    cierre de sesión
 //	POST   /auth/password/forgot           envía por correo (Resend) un código de recuperación
 //	POST   /auth/password/reset            cambia la contraseña con ese código
+//	POST   /auth/invitation                datos de una invitación de personal
+//	POST   /auth/invitation/accept         acepta la invitación, define la contraseña e inicia sesión
+//	POST   /auth/invitation/reject         rechaza la invitación y borra la cuenta
 //	GET    /auth/me                        datos de la sesión actual
-//	PATCH  /admin/:id/status-accepted      activa una cuenta de personal pendiente
 //	GET    /zones                          zonas visibles para el personal
 //	GET    /admin/staff                    lista del personal
-//	POST   /admin/staff                    alta de personal
+//	POST   /admin/staff                    alta de personal (envía la invitación por correo)
+//	POST   /admin/staff/:id/invitation     reenvía la invitación
 //	PATCH  /admin/staff/:id                cambio de rol, zona o estado de cuenta
 //	POST   /report                         crea un reporte (borrador)
 //	GET    /report                         reportes del ciudadano
@@ -119,12 +121,14 @@ func main() {
 	}))
 
 	router.POST("/auth/citizen", handlers.CitizenSignInHandler(pool, cfg))
-	router.POST("/auth/admin", handlers.AdminSignInHandler(pool, cfg))
 	router.POST("/auth/login", handlers.LoginHandler(pool, cfg))
 	router.POST("/auth/google", handlers.GoogleLoginHandler(pool, cfg))
 	router.POST("/auth/logout", handlers.LogoutHandler)
 	router.POST("/auth/password/forgot", handlers.ForgotPasswordHandler(pool, cfg))
 	router.POST("/auth/password/reset", handlers.ResetPasswordHandler(pool))
+	router.POST("/auth/invitation", handlers.GetInvitationHandler(pool))
+	router.POST("/auth/invitation/accept", handlers.AcceptInvitationHandler(pool, cfg))
+	router.POST("/auth/invitation/reject", handlers.RejectInvitationHandler(pool))
 	router.GET("/auth/me", middleware.AuthMiddleware(cfg), func(c *gin.Context) {
 		// Tokens emitidos antes de agregar los claims "name"/"zone_name" no los traen; se regresan vacíos.
 		name, zoneName := "", ""
@@ -142,7 +146,6 @@ func main() {
 			"zone_name": zoneName,
 		})
 	})
-	router.PATCH("/admin/:id/status-accepted", middleware.AuthMiddleware(cfg), handlers.AcceptOrRejectAdmin(pool))
 	router.GET("/zones", middleware.AuthRequired(), handlers.GetZones(pool))
 
 	// Gestión de cuentas solo para administradores activos.
@@ -150,7 +153,8 @@ func main() {
 	staff.Use(middleware.AuthMiddleware(cfg))
 	{
 		staff.GET("", handlers.ListStaffHandler(pool))
-		staff.POST("", handlers.CreateStaffHandler(pool))
+		staff.POST("", handlers.CreateStaffHandler(pool, cfg))
+		staff.POST("/:id/invitation", handlers.ResendInvitationHandler(pool, cfg))
 		staff.PATCH("/:id", handlers.UpdateStaffHandler(pool))
 	}
 

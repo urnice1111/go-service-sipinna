@@ -73,6 +73,18 @@ func ForgotPasswordHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFu
 			return
 		}
 
+		// Una cuenta invitada define su contraseña al aceptar la invitación, no aquí. Se
+		// responde igual que si no existiera para no revelar que hay una invitación.
+		invited, err := repository.IsInvitationPending(pool, user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo procesar la solicitud."})
+			return
+		}
+		if invited {
+			c.JSON(http.StatusOK, gin.H{"message": forgotPasswordMessage})
+			return
+		}
+
 		code, err := generateResetCode()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo generar el código."})
@@ -142,6 +154,16 @@ func ResetPasswordHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		}
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo procesar la solicitud."})
+			return
+		}
+
+		invited, err := repository.IsInvitationPending(pool, user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudo procesar la solicitud."})
+			return
+		}
+		if invited {
+			c.JSON(http.StatusBadRequest, invalidCode)
 			return
 		}
 

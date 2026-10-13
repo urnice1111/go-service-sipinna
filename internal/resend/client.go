@@ -24,34 +24,15 @@ func SendPasswordResetCode(ctx context.Context, cfg *config.Config, recipientEma
 		greeting += " " + name
 	}
 
-	body := fmt.Sprintf(`<div style="font-family:Arial,sans-serif;color:#1f2937">
-  <p>%s,</p>
-  <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta de SIPINNA. Tu código es:</p>
-  <p style="font-size:28px;font-weight:bold;letter-spacing:6px">%s</p>
-  <p>El código vence en %d minutos. Si no solicitaste el cambio, ignora este correo; tu contraseña no se modificará.</p>
-</div>`, html.EscapeString(greeting), code, minutes)
+	body, err := renderPasswordResetEmail(greeting, code, minutes)
+	if err != nil {
+		return err
+	}
 
 	text := fmt.Sprintf("%s,\n\nTu código para restablecer la contraseña de SIPINNA es: %s\n\nVence en %d minutos. Si no lo solicitaste, ignora este correo.\n",
 		greeting, code, minutes)
 
 	return send(ctx, cfg, recipientEmail, "Tu código de recuperación de SIPINNA", body, text)
-}
-
-// SendOneNotification avisa a un alimentador que se registró un reporte nuevo.
-func SendOneNotification(ctx context.Context, cfg *config.Config, name, email string) error {
-	greeting := "Hola"
-	if name = strings.TrimSpace(name); name != "" {
-		greeting += " " + name
-	}
-
-	body := fmt.Sprintf(`<div style="font-family:Arial,sans-serif;color:#1f2937">
-  <p>%s,</p>
-  <p>Se registró un reporte nuevo en tu zona de SIPINNA. Entra a la plataforma para revisarlo.</p>
-</div>`, html.EscapeString(greeting))
-
-	text := fmt.Sprintf("%s,\n\nSe registró un reporte nuevo en tu zona de SIPINNA. Entra a la plataforma para revisarlo.\n", greeting)
-
-	return send(ctx, cfg, email, "Nuevo reporte en tu zona de SIPINNA", body, text)
 }
 
 // send envía un correo con la API key y el remitente de cfg.
@@ -80,4 +61,40 @@ func send(ctx context.Context, cfg *config.Config, recipientEmail, subject, html
 	}
 
 	return nil
+}
+
+// SendStaffInvitation envía a recipientEmail la invitación para activar su cuenta de
+// personal.
+func SendStaffInvitation(ctx context.Context, cfg *config.Config, recipientEmail, name, roleLabel, link string, hours int) error {
+	greeting := "Hola"
+	if name = strings.TrimSpace(name); name != "" {
+		greeting += " " + name
+	}
+
+	body, err := renderStaffInvitationEmail(greeting, roleLabel, link, hours)
+	if err != nil {
+		return err
+	}
+
+	text := fmt.Sprintf("%s,\n\nTe invitaron a unirte a SIPINNA como %s. Para activar tu cuenta, abre este enlace y crea tu contraseña:\n\n%s\n\nVence en %d horas. Si no esperabas este correo, ignóralo.\n",
+		greeting, roleLabel, link, hours)
+
+	return send(ctx, cfg, recipientEmail, "Tu invitación a SIPINNA", body, text)
+}
+
+// SendOneNotification avisa a un alimentador que se registró un reporte nuevo.
+func SendOneNotification(ctx context.Context, cfg *config.Config, name, email string) error {
+	greeting := "Hola"
+	if name = strings.TrimSpace(name); name != "" {
+		greeting += " " + name
+	}
+
+	body := fmt.Sprintf(`<div style="font-family:Arial,sans-serif;color:#1f2937">
+  <p>%s,</p>
+  <p>Se registró un reporte nuevo en tu zona de SIPINNA. Entra a la plataforma para revisarlo.</p>
+</div>`, html.EscapeString(greeting))
+
+	text := fmt.Sprintf("%s,\n\nSe registró un reporte nuevo en tu zona de SIPINNA. Entra a la plataforma para revisarlo.\n", greeting)
+
+	return send(ctx, cfg, email, "Nuevo reporte en tu zona de SIPINNA", body, text)
 }

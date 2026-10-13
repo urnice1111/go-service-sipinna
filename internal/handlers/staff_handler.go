@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"errors"
+	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/repository"
+	"log"
 	"net/http"
 	"strings"
 
@@ -11,20 +13,17 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // CreateStaffRequest es el cuerpo de POST /admin/staff. ZoneID es obligatorio para
-// un alimentador y se ignora para un administrador.
+// un alimentador y se ignora para un administrador. El correo es obligatorio porque a
+// él se envía la invitación.
 type CreateStaffRequest struct {
 	Name            string  `json:"nombre" binding:"required"`
 	Role            string  `json:"rol" binding:"required"`
 	ZoneID          *string `json:"zona_id"`
-	Email           string  `json:"email" binding:"omitempty,email"`
+	Email           string  `json:"email" binding:"required,email"`
 	TelephoneNumber string  `json:"telefono" binding:"omitempty,e164"`
-	Password        string  `json:"password" binding:"required"`
-	// Activate indica si la cuenta nace activada (por defecto true); false la deja pendiente.
-	Activate *bool `json:"activar"`
 }
 
 // UpdateStaffRequest es el cuerpo de PATCH /admin/staff/:id. Los campos omitidos
@@ -106,15 +105,19 @@ func ListStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
-// CreateStaffHandler maneja POST /admin/staff: da de alta una cuenta de staff sin tocar
-// la sesión del administrador (a diferencia de POST /auth/admin, que inicia sesión como
-// la cuenta nueva). Solo para administradores.
+// CreateStaffHandler maneja POST /admin/staff: da de alta una cuenta de staff
+// 'pendiente' y sin contraseña, y le envía por correo la invitación para activarla
+// (ver [AcceptInvitationHandler]). Solo para administradores.
 //
-// Responde 201 con la cuenta creada, 409 si el correo o teléfono ya existen y 400 si
-// la zona no existe.
-func CreateStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
+// Responde 201 con la cuenta creada, 409 si el correo o teléfono ya existen, 400 si
+// la zona no existe y 502 si no se pudo enviar el correo (en ese caso la cuenta no se
+// crea).
+func CreateStaffHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if _, ok := requireAdministrador(c, pool); !ok {
+			return
+		}
+		if !invitationsConfigured(c, cfg) {
 			return
 		}
 
@@ -129,14 +132,7 @@ func CreateStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "el nombre es obligatorio"})
 			return
 		}
-		if strings.TrimSpace(req.Email) == "" && strings.TrimSpace(req.TelephoneNumber) == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "se requiere correo o teléfono"})
-			return
-		}
-		if len(req.Password) < 6 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "la contraseña debe tener al menos 6 caracteres"})
-			return
-		}
+		req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 		if !validRole(req.Role) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "rol inválido"})
 			return
@@ -151,21 +147,10 @@ func CreateStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
-		hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo procesar la contraseña"})
-			return
-		}
-
 		id, err := uuid.NewV7()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo generar el id"})
 			return
-		}
-
-		accountState := "activada"
-		if req.Activate != nil && !*req.Activate {
-			accountState = "pendiente"
 		}
 
 		member, err := repository.CreateStaffMember(pool, repository.NewStaffMember{
@@ -173,10 +158,8 @@ func CreateStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			Name:            req.Name,
 			Email:           optionalString(req.Email),
 			TelephoneNumber: optionalString(req.TelephoneNumber),
-			HashedPassword:  string(hashed),
 			Role:            req.Role,
 			ZoneID:          zoneID,
-			AccountState:    accountState,
 		})
 		if err != nil {
 			var pgErr *pgconn.PgError
@@ -189,6 +172,13 @@ func CreateStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 				return
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo crear la cuenta"})
+			return
+		}
+
+		if !sendStaffInvitation(c, pool, cfg, member) {
+			if err := repository.DeleteInvitedStaff(pool, member.ID); err != nil {
+				log.Printf("could not delete staff %s after failed invitation: %v", member.ID, err)
+			}
 			return
 		}
 
@@ -247,6 +237,11 @@ func UpdateStaffHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 		}
 		if !validAccountState(accountState) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "estado de cuenta inválido"})
+			return
+		}
+		// La cuenta se activa al aceptar su invitación; activarla antes la dejaría sin contraseña.
+		if current.InvitationPending && accountState == "activada" {
+			c.JSON(http.StatusConflict, gin.H{"error": "la cuenta debe aceptar su invitación para activarse"})
 			return
 		}
 		// Evita que el administrador se quite el acceso a sí mismo.

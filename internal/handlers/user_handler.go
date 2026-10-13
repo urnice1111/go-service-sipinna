@@ -28,16 +28,6 @@ type CreateCitizen struct {
 	Password        string `json:"password" binding:"required"`
 }
 
-// CreateAdmin es el cuerpo de POST /auth/admin. Se requiere correo o teléfono
-// (en formato E.164).
-type CreateAdmin struct {
-	Name            string `json:"nombre" binding:"required"`
-	Role            string `json:"rol" biding:"required"`
-	Email           string `json:"email" binding:"required_without=TelephoneNumber,omitempty,email"`
-	TelephoneNumber string `json:"telefono" binding:"required_without=Email,omitempty,e164"`
-	Password        string `json:"password" binding:"required"`
-}
-
 // LoginRequest es el cuerpo de POST /auth/login. Debe traer exactamente uno de
 // Email o Phone.
 type LoginRequest struct {
@@ -109,114 +99,6 @@ func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFun
 	}
 }
 
-// AdminSignInHandler maneja POST /auth/admin: registra una cuenta de personal con el
-// rol indicado e inicia sesión como ella. La cuenta queda en estado "pendiente" hasta
-// que un administrador la active con [AcceptOrRejectAdmin].
-//
-// Para dar de alta personal desde el panel sin cambiar de sesión se usa
-// [CreateStaffHandler].
-func AdminSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var req CreateAdmin
-		if err := c.BindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		emailMissing := strings.TrimSpace(req.Email) == ""
-		phoneMissing := strings.TrimSpace(req.TelephoneNumber) == ""
-
-		if emailMissing && phoneMissing {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "email or telephone number is required",
-			})
-			return
-		}
-
-		if len(req.Password) < 6 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "password must be at least 6"})
-			return
-		}
-
-		var HashedPassword, err = bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password" + err.Error()})
-			return
-		}
-
-		idV7, err := uuid.NewV7()
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate uuid" + err.Error()})
-			return
-		}
-
-		user := &models.User{
-			ID:              idV7,
-			Name:            req.Name,
-			Role:            req.Role,
-			Email:           optionalString(req.Email),
-			TelephoneNumber: optionalString(req.TelephoneNumber),
-			HashedPassword:  string(HashedPassword),
-		}
-
-		newUser, err := repository.CreateAdmin(pool, user)
-
-		//TODO :- Add logic to verify what type of error is: if the user already exists etc
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error registering the user on the db" + err.Error()})
-			return
-		}
-
-		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, true, req.Role, "change_later", "")
-
-	}
-
-}
-
-// AcceptOrRejectAdmin maneja PATCH /admin/:id/status-accepted: activa una cuenta de
-// personal que está "pendiente". Requiere que la sesión sea de un administrador.
-//
-// Responde 404 si la cuenta no existe o no está pendiente.
-func AcceptOrRejectAdmin(pool *pgxpool.Pool) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if !c.GetBool("is_admin") {
-			c.JSON(http.StatusForbidden, gin.H{"error": "admin privileges are required"})
-			return
-		}
-		adminID, err := uuid.Parse(c.Param("id"))
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "invalid admin id",
-			})
-			return
-		}
-
-		accountStatus, err := repository.ActivateAdminAccount(
-			pool,
-			adminID,
-		)
-		if errors.Is(err, pgx.ErrNoRows) {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": "admin not found or account is already deactivated",
-			})
-			return
-		}
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "could not update account status",
-			})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"id":            adminID,
-			"estado_cuenta": accountStatus,
-		})
-	}
-}
-
 // LoginHandler maneja POST /auth/login: valida correo o teléfono y contraseña, y si
 // son correctos deja la cookie de sesión. Responde 401 con el mismo mensaje tanto si
 // el usuario no existe como si la contraseña es incorrecta.
@@ -272,8 +154,14 @@ func LogoutHandler(c *gin.Context) {
 
 // respondWithToken firma un JWT HS256 con vigencia de 7 días, lo guarda en la cookie
 // "session_token" (HttpOnly, Secure, SameSite=None) y responde status con el nombre,
-// tipo de usuario y zona.
+// tipo de usuario y zona. Responde 403 sin emitir sesión si es personal cuya cuenta
+// no está activada.
 func respondWithToken(c *gin.Context, status int, userID uuid.UUID, cfg *config.Config, isAdmin bool, userType string, userName string, zoneName string) {
+	if userType != "citizen" && !isAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "La cuenta aún no está activada."})
+		return
+	}
+
 	if strings.TrimSpace(cfg.JWTSecret) == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "JWT secret is not configured"})
 		return
