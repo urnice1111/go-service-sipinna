@@ -149,6 +149,13 @@ func main() {
 		staff.PATCH("/:id", handlers.UpdateStaffHandler(pool))
 	}
 
+	cases := router.Group("/cases")
+	cases.Use(middleware.AuthRequired())
+	{
+		cases.GET("", handlers.GetCases(pool))
+		cases.POST("", handlers.CreateCase(pool))
+	}
+
 	report := router.Group("/report")
 	report.POST("", middleware.OptionalAuth(), handlers.CreateReportHandler(pool, cfg))
 	report.POST("/:report_id/images", handlers.RegisterImagesRows(pool))
@@ -164,6 +171,7 @@ func main() {
 		authedReport.GET("/:folio", handlers.GetReportByFolioHandler(pool))
 		authedReport.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))
 		authedReport.PATCH("/:folio/assignment", handlers.ReportAssignment(pool))
+		authedReport.PATCH("/:folio/case", handlers.UpdateReportsCase(pool))
 		authedReport.DELETE("/:folio", handlers.DeleteReportHandler(pool, uploader))
 	}
 
