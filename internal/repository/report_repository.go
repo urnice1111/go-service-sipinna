@@ -172,7 +172,8 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID)
 	) AS he ON TRUE
 	WHERE
 		($1 = '' OR r.zona_id::text = $1 OR UPPER(z.municipio) = UPPER($1))
-		AND ($2::uuid IS NULL OR r.zona_id = $2);
+		AND ($2::uuid IS NULL OR r.zona_id = $2)
+		AND he.estado != 'DRAFT';
 	`
 
 	rows, err := pool.Query(ctx, queryGetReports, zoneID, scopeZoneID)
