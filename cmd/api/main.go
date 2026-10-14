@@ -17,6 +17,9 @@
 //	POST   /auth/invitation/accept         acepta la invitación, define la contraseña e inicia sesión
 //	POST   /auth/invitation/reject         rechaza la invitación y borra la cuenta
 //	GET    /auth/me                        datos de la sesión actual
+//	GET    /account                       perfil de la cuenta actual
+//	PUT    /account                       edición del perfil de ciudadano
+//	DELETE /account                       elimina la cuenta actual (cualquier rol)
 //	GET    /zones                          zonas visibles para el personal
 //	GET    /admin/staff                    lista del personal
 //	POST   /admin/staff                    alta de personal (envía la invitación por correo)
@@ -43,14 +46,12 @@ import (
 	"go-service-sipinna/internal/handlers"
 	"go-service-sipinna/internal/middleware"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -120,6 +121,8 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
+	router.Use(middleware.AccountSession(pool, cfg))
+
 	router.POST("/auth/citizen", handlers.CitizenSignInHandler(pool, cfg))
 	router.POST("/auth/login", handlers.LoginHandler(pool, cfg))
 	router.POST("/auth/google", handlers.GoogleLoginHandler(pool, cfg))
@@ -129,23 +132,11 @@ func main() {
 	router.POST("/auth/invitation", handlers.GetInvitationHandler(pool))
 	router.POST("/auth/invitation/accept", handlers.AcceptInvitationHandler(pool, cfg))
 	router.POST("/auth/invitation/reject", handlers.RejectInvitationHandler(pool))
-	router.GET("/auth/me", middleware.AuthMiddleware(cfg), func(c *gin.Context) {
-		// Tokens emitidos antes de agregar los claims "name"/"zone_name" no los traen; se regresan vacíos.
-		name, zoneName := "", ""
-		if claims, ok := c.Get("user"); ok {
-			if mapClaims, ok := claims.(jwt.MapClaims); ok {
-				name, _ = mapClaims["name"].(string)
-				zoneName, _ = mapClaims["zone_name"].(string)
-			}
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"user_id":   c.GetString("user_id"),
-			"user_type": c.GetString("user_type"),
-			"name":      name,
-			"zone_name": zoneName,
-		})
-	})
+	router.GET("/auth/me", middleware.AuthMiddleware(cfg), handlers.MeHandler(pool))
+	account := router.Group("/account", middleware.AuthMiddleware(cfg))
+	account.GET("", handlers.GetProfileHandler(pool))
+	account.PUT("", handlers.UpdateProfileHandler(pool))
+	account.DELETE("", handlers.DeleteAccountHandler(pool))
 	router.GET("/zones", middleware.AuthRequired(), handlers.GetZones(pool))
 
 	// Gestión de cuentas solo para administradores activos.

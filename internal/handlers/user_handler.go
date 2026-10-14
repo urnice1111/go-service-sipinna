@@ -94,7 +94,7 @@ func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFun
 			return
 		}
 
-		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, false, "citizen", "change_later", "")
+		respondWithToken(c, http.StatusCreated, newUser.ID, cfg, false, "citizen", newUser.Name, "")
 
 	}
 }
