@@ -133,6 +133,10 @@ func main() {
 	router.POST("/auth/invitation/accept", handlers.AcceptInvitationHandler(pool, cfg))
 	router.POST("/auth/invitation/reject", handlers.RejectInvitationHandler(pool))
 	router.GET("/auth/me", middleware.AuthMiddleware(cfg), handlers.MeHandler(pool))
+
+	// Experimental
+	router.POST("agent/report", handlers.CreateReportFromTwilio(pool, cfg))
+
 	account := router.Group("/account", middleware.AuthMiddleware(cfg))
 	account.GET("", handlers.GetProfileHandler(pool))
 	account.PUT("", handlers.UpdateProfileHandler(pool))

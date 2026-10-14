@@ -31,6 +31,7 @@ type Config struct {
 	// Proyecto de Supabase usado solo para validar los inicios de sesión con Google
 	SupabaseURL     string
 	SupabaseAnonKey string
+	TwilioKey       string
 }
 
 // Load lee la configuración de las variables de entorno. Si existe un archivo .env
@@ -52,6 +53,7 @@ func Load() (*Config, error) {
 		SipinnaResendFrom:   os.Getenv("SIPINNA_RESEND_FROM"),
 		SupabaseURL:         strings.TrimRight(strings.TrimSpace(os.Getenv("SUPABASE_URL")), "/"),
 		SupabaseAnonKey:     strings.TrimSpace(os.Getenv("SUPABASE_ANON_KEY")),
+		TwilioKey:           os.Getenv("TWILIO_KEY"),
 	}
 
 	if strings.TrimSpace(config.JWTSecret) == "" {
