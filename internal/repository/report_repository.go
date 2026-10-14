@@ -709,6 +709,32 @@ func GetAllAlimentadores(pool *pgxpool.Pool, zoneID string) (*[]models.Alimentad
 	return &Alimentadores, nil
 }
 
+// UpdateReportAssignment cambia la categoría y la zona del reporte folio.
+// newWorkType o newZoneID nil dejan esa columna como está.
+// scopeZoneID nil (administrador) alcanza cualquier reporte; si no es nil, solo el de esa zona.
+// Regresa pgx.ErrNoRows si el folio no existe o está fuera de la zona.
+func UpdateReportAssignment(pool *pgxpool.Pool, newWorkType *string, newZoneID *string, folio string, scopeZoneID *uuid.UUID) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const query = `
+		UPDATE reportes
+		SET tipo_trabajo = COALESCE($1, tipo_trabajo),
+			zona_id = COALESCE($2::uuid, zona_id)
+		WHERE folio = $3
+			AND ($4::uuid IS NULL OR zona_id = $4)
+	`
+
+	tag, err := pool.Exec(ctx, query, newWorkType, newZoneID, folio, scopeZoneID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // GetPresignedURL genera una URL prefirmada de GET para objectKey en bucketName,
 // válida durante lifetimeDuration. Usa la configuración por defecto de AWS.
 func GetPresignedURL(bucketName string, objectKey string, lifetimeDuration time.Duration) (string, error) {

@@ -298,6 +298,37 @@ func UpdateReportStatusHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	}
 }
 
+func ReportAssignment(pool *pgxpool.Pool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		_, scopeZoneID, ok := requireActiveStaff(c, pool)
+
+		if !ok {
+			return
+		}
+
+		folio := strings.TrimSpace(c.Param("folio"))
+
+		var req models.ReportAssignment
+		err := c.ShouldBindJSON(&req)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No zone or work type provided"})
+			return
+		}
+
+		err = repository.UpdateReportAssignment(pool, req.WorkType, req.ZoneID, folio, scopeZoneID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "report not found"})
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed while updating"})
+			return
+		}
+
+		c.JSON(http.StatusOK, true)
+	}
+}
+
 // requireReportEditor permite editar el reporte a su dueño o, si es anónimo y sigue
 // en DRAFT, a quien envíe el header X-Edit-Token igual a temp_key. Si regresa false,
 // la respuesta de error ya se escribió y el handler solo debe terminar.

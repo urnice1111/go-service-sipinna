@@ -163,6 +163,7 @@ func main() {
 		authedReport.GET("/zone/:zone_id", handlers.GetReportsByZone(pool))
 		authedReport.GET("/:folio", handlers.GetReportByFolioHandler(pool))
 		authedReport.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))
+		authedReport.PATCH("/:folio/assignment", handlers.ReportAssignment(pool))
 		authedReport.DELETE("/:folio", handlers.DeleteReportHandler(pool, uploader))
 	}
 

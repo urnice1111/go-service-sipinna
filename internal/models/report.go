@@ -71,3 +71,10 @@ type ReportDetail struct {
 	// Images son URLs prefirmadas de S3 con vigencia corta (15 minutos).
 	Images []string `json:"images"`
 }
+
+// ReportAssignment es el cuerpo de PATCH /report/:folio/assignment.
+// Un campo null no cambia la columna.
+type ReportAssignment struct {
+	ZoneID   *string `json:"new_zone_id"`
+	WorkType *string `json:"new_work_type"`
+}
