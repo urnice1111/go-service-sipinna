@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
@@ -12,7 +13,10 @@ import (
 
 func CreateReportFromTwilio(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		twilio_key := c.GetHeader("twilio_key")
+		twilio_key := c.GetHeader("twilio")
+
+		fmt.Println(twilio_key)
+		fmt.Println(cfg.TwilioKey)
 
 		if (twilio_key == "") || (twilio_key != cfg.TwilioKey) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Bad secret key"})
