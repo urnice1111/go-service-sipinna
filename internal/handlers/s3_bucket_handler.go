@@ -120,7 +120,7 @@ func UploadToS3(uploader *S3Uploader, pool *pgxpool.Pool) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err})
 			return
 		}
-		reportID := c.Param("report_id")
+		reportID := c.Param("report_ref")
 
 		if reportID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "No reportID provided"})

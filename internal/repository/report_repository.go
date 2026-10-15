@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"go-service-sipinna/internal/models"
+	"log"
 	"strings"
 	"time"
 
@@ -18,14 +19,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// CreateReport inserta el reporte r a nombre de ciudadanoID (nil para un reporte
-// anónimo). La zona se elige en la base de datos como la más cercana a las
-// coordenadas (distancia haversine) y el folio se arma con su municipio.
-//
-// tempKey es la llave de edición del borrador anónimo; es nil si el reporte tiene dueño.
-// Solo se llena r.ID con el id que regresa la base de datos. Regresa pgx.ErrNoRows si
-// no hay ninguna zona con coordenadas.
-func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tempKey *uuid.UUID) (*models.Report, error) {
+// CreateReport crea un borrador en la zona más cercana y llena r.ID y r.Folio.
+// Devuelve la clave de consulta; tempKey permite editar sin sesión.
+// El peligro inmediato fija prioridad alta. Sin zona devuelve pgx.ErrNoRows.
+func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tempKey *uuid.UUID) (uuid.UUID, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 
 	defer cancel()
@@ -83,7 +80,14 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tem
 		tipo_trabajo, 
 		horario_avistamiento,
 		zona_id,
-		temp_key)
+		temp_key,
+		riesgo,
+		peligro_inmediato,
+		prioridad,
+		colonia,
+		referencia,
+		contacto_email,
+		contacto_telefono)
 	SELECT
 				FORMAT(
 					'RIETI-%s-%s-%s',
@@ -100,13 +104,21 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tem
 				$7,
 				$8,
 				id,
-				$9
+				$9,
+				NULLIF($10, ''),
+				$11,
+				CASE WHEN $11 THEN 'alta' ELSE 'normal' END,
+				NULLIF($12, ''),
+				NULLIF($13, ''),
+				NULLIF($14, ''),
+				NULLIF($15, '')
 			FROM ubicacion_cercana
-			RETURNING id
+			RETURNING id, folio, clave_consulta
 	)
-	SELECT id FROM nuevo_reporte;
+	SELECT id, folio, clave_consulta FROM nuevo_reporte;
 	`
 
+	var accessKey uuid.UUID
 	err := pool.QueryRow(
 		ctx,
 		queryCrearReporte,
@@ -119,16 +131,87 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tem
 		r.WorkType,
 		r.SightingTime,
 		tempKey,
+		r.Risk,
+		r.ImmediateDanger,
+		r.Neighborhood,
+		r.Reference,
+		r.ContactEmail,
+		r.ContactPhone,
 	).Scan(
 		&r.ID,
+		&r.Folio,
+		&accessKey,
 	)
 
 	if err != nil {
-		return nil, err
+		return uuid.Nil, err
 	}
 
-	return r, nil
+	return accessKey, nil
 
+}
+
+// extraReportColumns comparte columnas entre listado y detalle, en orden de escaneo.
+// Requiere los alias r (reporte) y dup (original).
+const extraReportColumns = `
+		COALESCE(r.horario_avistamiento, '') AS horario_avistamiento,
+		COALESCE(r.riesgo, '') AS riesgo,
+		r.peligro_inmediato,
+		r.prioridad,
+		COALESCE(r.sexo, '') AS sexo,
+		COALESCE(r.colonia, '') AS colonia,
+		COALESCE(r.referencia, '') AS referencia,
+		COALESCE(dup.folio, '') AS folio_duplicado,
+		r.nna_atendidos,
+        r.caso_id,
+        (SELECT nombre FROM casos WHERE id = r.caso_id) AS nombre_caso`
+
+// reportJoins resuelve zona, ciudadano, posible duplicado y último estado del reporte.
+const reportJoins = `
+	FROM reportes AS r
+	INNER JOIN zonas AS z
+		ON r.zona_id = z.id
+	-- LEFT: ciudadano_id queda en NULL si se borra el ciudadano (ON DELETE SET NULL).
+	LEFT JOIN usuarios AS u
+		ON r.ciudadano_id = u.id
+	LEFT JOIN reportes AS dup
+		ON r.posible_duplicado_de = dup.id
+	LEFT JOIN LATERAL (
+		SELECT h.estado, h.changed_at
+		FROM historial_estados AS h
+		WHERE h.reporte_id = r.id
+		ORDER BY h.changed_at DESC, h.id DESC
+		LIMIT 1
+	) AS he ON TRUE`
+
+// reportScanTargets mantiene el mismo orden de campos compartidos entre listado y detalle.
+func reportScanTargets(r *models.IndividualReport) []any {
+	return []any{
+		&r.Folio,
+		&r.Description,
+		&r.Latitude,
+		&r.Longitude,
+		&r.ChildrenQuantity,
+		&r.WorkType,
+		&r.CreatedtAt,
+		&r.SuspiciusLevel,
+		&r.ChildrenAge,
+		&r.ZoneName,
+		&r.CitizenName,
+		&r.LastState,
+		&r.StateChangedAt,
+		&r.SightingTime,
+		&r.Risk,
+		&r.ImmediateDanger,
+		&r.Priority,
+		&r.Sex,
+		&r.Neighborhood,
+		&r.Reference,
+		&r.DuplicateOf,
+		&r.ChildrenCared,
+		&r.CaseID,
+		&r.CaseName,
+	}
 }
 
 // GetReportsByZone regresa los reportes filtrados por id de zona o por municipio; un
@@ -156,20 +239,9 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID)
 		z.nombre AS nombre_zona,
 		COALESCE(u.nombre, '') AS nombre_ciudadano,
 		COALESCE(he.estado::text, 'DRAFT') AS ultimo_estado,
-		COALESCE(he.changed_at, r.created_at) AS estado_changed_at
-	FROM reportes AS r
-	INNER JOIN zonas AS z
-		ON r.zona_id = z.id
-	-- LEFT: ciudadano_id queda en NULL si se borra el ciudadano (ON DELETE SET NULL).
-	LEFT JOIN usuarios AS u
-		ON r.ciudadano_id = u.id
-	LEFT JOIN LATERAL (
-		SELECT h.estado, h.changed_at
-		FROM historial_estados AS h
-		WHERE h.reporte_id = r.id
-		ORDER BY h.changed_at DESC, h.id DESC
-		LIMIT 1
-	) AS he ON TRUE
+		COALESCE(he.changed_at, r.created_at) AS estado_changed_at,
+		` + extraReportColumns + `
+` + reportJoins + `
 	WHERE
 		($1 = '' OR r.zona_id::text = $1 OR UPPER(z.municipio) = UPPER($1))
 		AND ($2::uuid IS NULL OR r.zona_id = $2)
@@ -187,21 +259,7 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID)
 
 	for rows.Next() {
 		var ir models.IndividualReport
-		err = rows.Scan(
-			&ir.Folio,
-			&ir.Description,
-			&ir.Latitude,
-			&ir.Longitude,
-			&ir.ChildrenQuantity,
-			&ir.WorkType,
-			&ir.CreatedtAt,
-			&ir.SuspiciusLevel,
-			&ir.ChildrenAge,
-			&ir.ZoneName,
-			&ir.CitizenName,
-			&ir.LastState,
-			&ir.StateChangedAt,
-		)
+		err = rows.Scan(reportScanTargets(&ir)...)
 		if err != nil {
 			return nil, err
 		}
@@ -229,10 +287,12 @@ func GetReportsSummaryOfUser(pool *pgxpool.Pool, userID string) ([]models.Indivi
 		COALESCE(he.estado::text, 'DRAFT') AS report_state,
 		r.latitud,
 		r.longitud,
-		r.descripcion
+		r.descripcion,
+        r.created_at,
+        COALESCE(he.changed_at, r.created_at) AS state_changed_at
 	FROM reportes AS r
 	LEFT JOIN LATERAL (
-		SELECT h.estado
+		SELECT h.estado, h.changed_at
 		FROM historial_estados AS h
 		WHERE h.reporte_id = r.id
 		ORDER BY h.changed_at DESC, h.id DESC
@@ -247,32 +307,7 @@ func GetReportsSummaryOfUser(pool *pgxpool.Pool, userID string) ([]models.Indivi
 		return nil, err
 	}
 
-	defer rows.Close()
-
-	var AllReportsSummary []models.IndividualReportInfoBrief = []models.IndividualReportInfoBrief{}
-
-	for rows.Next() {
-		var tempReport models.IndividualReportInfoBrief
-
-		err = rows.Scan(
-			&tempReport.Folio,
-			&tempReport.State,
-			&tempReport.Latitude,
-			&tempReport.Longitude,
-			&tempReport.Description,
-		)
-		if err != nil {
-			return nil, err
-		}
-		AllReportsSummary = append(AllReportsSummary, tempReport)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return AllReportsSummary, nil
-
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[models.IndividualReportInfoBrief])
 }
 
 // ErrSameReportStatus lo regresa [UpdateReportStatus] cuando el reporte ya tiene el
@@ -339,7 +374,17 @@ func UpdateReportStatus(
 		return time.Time{}, err
 	}
 
-	if _, err := tx.Exec(ctx, `UPDATE reportes SET updated_at = $1 WHERE id = $2`, changedAt, reportID); err != nil {
+	// Minimización de datos: el contacto de seguimiento solo se guarda mientras el
+	// reporte sigue abierto.
+	const queryTouchReport = `
+		UPDATE reportes
+		SET updated_at = $1,
+			contacto_email = CASE WHEN $3 THEN NULL ELSE contacto_email END,
+			contacto_telefono = CASE WHEN $3 THEN NULL ELSE contacto_telefono END
+		WHERE id = $2
+	`
+	closing := status == "concluido" || status == "archivado" || status == "cancelado"
+	if _, err := tx.Exec(ctx, queryTouchReport, changedAt, reportID, closing); err != nil {
 		return time.Time{}, err
 	}
 
@@ -376,19 +421,13 @@ func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID, 
 		COALESCE(u.nombre, '') AS nombre_ciudadano,
 		COALESCE(he.estado::text, 'DRAFT') AS ultimo_estado,
 		COALESCE(he.changed_at, r.created_at) AS estado_changed_at,
-		COALESCE(r.horario_avistamiento, '') AS horario_avistamiento
-	FROM reportes AS r
-	INNER JOIN zonas AS z
-		ON r.zona_id = z.id
-	LEFT JOIN usuarios AS u
-		ON r.ciudadano_id = u.id
-	LEFT JOIN LATERAL (
-		SELECT h.estado, h.changed_at
-		FROM historial_estados AS h
-		WHERE h.reporte_id = r.id
-		ORDER BY h.changed_at DESC, h.id DESC
-		LIMIT 1
-	) AS he ON TRUE
+		` + extraReportColumns + `,
+		COALESCE(r.responsable, ''),
+		COALESCE(r.dependencia_canalizada, ''),
+		COALESCE(TO_CHAR(r.fecha_seguimiento, 'YYYY-MM-DD'), ''),
+		COALESCE(r.resultado, ''),
+		COALESCE(TO_CHAR(r.fecha_cierre, 'YYYY-MM-DD'), '')
+` + reportJoins + `
 	WHERE r.folio = $1
 		AND ($2::uuid IS NULL OR r.zona_id = $2)
 		AND ($3::uuid IS NULL OR r.ciudadano_id = $3);
@@ -396,23 +435,15 @@ func GetReportByFolio(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID, 
 
 	var reportID uuid.UUID
 	var rd models.ReportDetail
-	err := pool.QueryRow(ctx, queryGetReport, folio, scopeZoneID, citizenID).Scan(
-		&reportID,
-		&rd.Folio,
-		&rd.Description,
-		&rd.Latitude,
-		&rd.Longitude,
-		&rd.ChildrenQuantity,
-		&rd.WorkType,
-		&rd.CreatedtAt,
-		&rd.SuspiciusLevel,
-		&rd.ChildrenAge,
-		&rd.ZoneName,
-		&rd.CitizenName,
-		&rd.LastState,
-		&rd.StateChangedAt,
-		&rd.SightingTime,
+	targets := append([]any{&reportID}, reportScanTargets(&rd.IndividualReport)...)
+	targets = append(targets,
+		&rd.Responsible,
+		&rd.ChanneledTo,
+		&rd.FollowUpDate,
+		&rd.Outcome,
+		&rd.ClosedDate,
 	)
+	err := pool.QueryRow(ctx, queryGetReport, folio, scopeZoneID, citizenID).Scan(targets...)
 	if err != nil {
 		return nil, err
 	}
@@ -620,10 +651,10 @@ func GetReportAccess(pool *pgxpool.Pool, reportID string) (*ReportAccess, error)
 	return &access, nil
 }
 
-// UpdateReportDraft envía el reporte reportID: agrega el estado "registrado" a su
-// historial siempre que ninguna de sus imágenes siga "pendiente", y borra temp_key.
-// Regresa un error si el reporte no existe o aún tiene imágenes pendientes.
-func UpdateReportDraft(pool *pgxpool.Pool, reportID string) (uuid.UUID, error) {
+// UpdateReportDraft registra el envío y borra temp_key si todas las fotos están listas.
+// Busca posibles duplicados de la misma zona a unos 100 m durante los últimos 7 días.
+// Devuelve error si no existe el reporte o faltan fotos por subir.
+func UpdateReportDraft(pool *pgxpool.Pool, reportID string) (*models.SubmittedReport, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	query := `
@@ -650,64 +681,222 @@ func UpdateReportDraft(pool *pgxpool.Pool, reportID string) (uuid.UUID, error) {
 		UPDATE reportes
 		SET temp_key = NULL
 		WHERE id IN (SELECT reporte_id FROM submitted)
-		RETURNING zona_id;
+		RETURNING zona_id, folio, clave_consulta, contacto_email, peligro_inmediato;
 	`
 
-	var zoneID uuid.UUID
-	err := pool.QueryRow(ctx, query, reportID).Scan(&zoneID)
+	var sr models.SubmittedReport
+	err := pool.QueryRow(ctx, query, reportID).Scan(&sr.ZoneID, &sr.Folio, &sr.AccessKey, &sr.ContactEmail, &sr.ImmediateDanger)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil, fmt.Errorf("reporte no encontrado o todavía tiene imágenes pendientes")
+		return nil, fmt.Errorf("reporte no encontrado o todavía tiene imágenes pendientes")
 	}
 	if err != nil {
-		return uuid.Nil, err
+		return nil, err
 	}
-	return zoneID, nil
+
+	// 0.001° son unos 100 m en el centro de México. Se apunta al reporte original de
+	// la cadena para no encadenar duplicados.
+	const queryDuplicate = `
+		UPDATE reportes AS r
+		SET posible_duplicado_de = (
+			SELECT COALESCE(o.posible_duplicado_de, o.id)
+			FROM reportes AS o
+			WHERE o.id <> r.id
+				AND o.zona_id = r.zona_id
+				AND o.created_at BETWEEN r.created_at - INTERVAL '7 days' AND r.created_at
+				AND ABS(o.latitud - r.latitud) < 0.001
+				AND ABS(o.longitud - r.longitud) < 0.001
+				AND EXISTS (
+					SELECT 1 FROM historial_estados AS h
+					WHERE h.reporte_id = o.id AND h.estado <> 'DRAFT'
+				)
+			ORDER BY o.created_at
+			LIMIT 1
+		)
+		WHERE r.id = $1
+	`
+	if _, err := pool.Exec(ctx, queryDuplicate, reportID); err != nil {
+		log.Printf("could not check duplicates of report %s: %v", reportID, err)
+	}
+
+	return &sr, nil
 }
 
-func GetAllAlimentadores(pool *pgxpool.Pool, zoneID string) (*[]models.AlimentadorForEmail, error) {
-
+// UpdateCaseFile modifica el expediente dentro de scopeZoneID.
+// Devuelve pgx.ErrNoRows si no es accesible y ErrUnknownDuplicate si falta el original.
+func UpdateCaseFile(pool *pgxpool.Pool, folio string, f models.CaseFile, scopeZoneID *uuid.UUID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-
 	defer cancel()
 
-	var query = `
-		select u.nombre, u.email from admins a
-		inner join usuarios u on a.id = u.id
-		where zona_id = $1 and a.estado_cuenta = 'activada';
+	if f.DuplicateOf != nil && *f.DuplicateOf != "" {
+		var exists bool
+		err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reportes WHERE folio = $1 AND folio <> $2 AND ($3::uuid IS NULL OR zona_id = $3))`, *f.DuplicateOf, folio, scopeZoneID).Scan(&exists)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return ErrUnknownDuplicate
+		}
+	}
+
+	// Para cada campo: NULL = sin cambio, '' = borrar.
+	const query = `
+		UPDATE reportes
+		SET prioridad = COALESCE(NULLIF($1, ''), prioridad),
+			sexo = CASE WHEN $2::text IS NULL THEN sexo ELSE NULLIF($2, '') END,
+			colonia = CASE WHEN $3::text IS NULL THEN colonia ELSE NULLIF($3, '') END,
+			responsable = CASE WHEN $4::text IS NULL THEN responsable ELSE NULLIF($4, '') END,
+			dependencia_canalizada = CASE WHEN $5::text IS NULL THEN dependencia_canalizada ELSE NULLIF($5, '') END,
+			fecha_seguimiento = CASE WHEN $6::text IS NULL THEN fecha_seguimiento ELSE NULLIF($6, '')::date END,
+			resultado = CASE WHEN $7::text IS NULL THEN resultado ELSE NULLIF($7, '') END,
+			nna_atendidos = COALESCE($8, nna_atendidos),
+			fecha_cierre = CASE WHEN $9::text IS NULL THEN fecha_cierre ELSE NULLIF($9, '')::date END,
+			posible_duplicado_de = CASE
+				WHEN $10::text IS NULL THEN posible_duplicado_de
+				WHEN $10 = '' THEN NULL
+				ELSE (SELECT id FROM reportes WHERE folio = $10 AND folio <> $11 AND ($12::uuid IS NULL OR zona_id = $12))
+			END
+		WHERE folio = $11
+			AND ($12::uuid IS NULL OR zona_id = $12)
 	`
 
-	rows, err := pool.Query(ctx, query, zoneID)
+	tag, err := pool.Exec(ctx, query,
+		f.Priority, f.Sex, f.Neighborhood, f.Responsible, f.ChanneledTo, f.FollowUpDate,
+		f.Outcome, f.ChildrenCared, f.ClosedDate, f.DuplicateOf, folio, scopeZoneID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
 
+// ErrUnknownDuplicate lo regresa [UpdateCaseFile] cuando el folio original no existe.
+var ErrUnknownDuplicate = errors.New("duplicate_of folio not found")
+
+// GetReportActions lista acciones en orden cronológico dentro de scopeZoneID.
+// Devuelve pgx.ErrNoRows si el reporte no es accesible.
+func GetReportActions(pool *pgxpool.Pool, folio string, scopeZoneID *uuid.UUID) ([]models.ReportAction, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var reportID uuid.UUID
+	err := pool.QueryRow(ctx, `SELECT id FROM reportes WHERE folio = $1 AND ($2::uuid IS NULL OR zona_id = $2)`, folio, scopeZoneID).Scan(&reportID)
 	if err != nil {
 		return nil, err
 	}
 
-	var Alimentadores []models.AlimentadorForEmail
-
-	for rows.Next() {
-		var name string
-		var email string
-
-		if err := rows.Scan(&name, &email); err != nil {
-			return nil, err
-		}
-
-		var temp models.AlimentadorForEmail
-
-		temp.Name = name
-		temp.Email = email
-
-		fmt.Println(temp)
-
-		Alimentadores = append(Alimentadores, temp)
-
-	}
-
-	if err := rows.Err(); err != nil {
+	const query = `
+		SELECT c.id, c.comentario, COALESCE(u.nombre, ''), c.created_at
+		FROM comentarios AS c
+		LEFT JOIN usuarios AS u ON c.admin_id = u.id
+		WHERE c.reporte_id = $1
+		ORDER BY c.created_at
+	`
+	rows, err := pool.Query(ctx, query, reportID)
+	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
-	return &Alimentadores, nil
+	actions := []models.ReportAction{}
+	for rows.Next() {
+		var a models.ReportAction
+		if err := rows.Scan(&a.ID, &a.Text, &a.StaffName, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		actions = append(actions, a)
+	}
+	return actions, rows.Err()
+}
+
+// AddReportAction registra una acción en el reporte folio a nombre de adminID.
+// Regresa pgx.ErrNoRows si el folio no existe o está fuera de scopeZoneID.
+func AddReportAction(pool *pgxpool.Pool, folio, text string, adminID uuid.UUID, scopeZoneID *uuid.UUID) (*models.ReportAction, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const query = `
+		WITH nueva AS (
+			INSERT INTO comentarios (reporte_id, admin_id, comentario)
+			SELECT id, $3, $4
+			FROM reportes
+			WHERE folio = $1 AND ($2::uuid IS NULL OR zona_id = $2)
+			RETURNING id, comentario, admin_id, created_at
+		)
+		SELECT n.id, n.comentario, COALESCE(u.nombre, ''), n.created_at
+		FROM nueva AS n
+		LEFT JOIN usuarios AS u ON n.admin_id = u.id
+	`
+	var a models.ReportAction
+	err := pool.QueryRow(ctx, query, folio, scopeZoneID, adminID, text).Scan(&a.ID, &a.Text, &a.StaffName, &a.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+// GetPublicReportStatus consulta un reporte enviado con folio y clave coincidentes.
+// Devuelve el estado interno para traducirlo con PublicStatus; sin coincidencia, pgx.ErrNoRows.
+func GetPublicReportStatus(pool *pgxpool.Pool, folio string, accessKey uuid.UUID) (*models.PublicReportStatus, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const query = `
+		SELECT r.folio, he.estado::text, r.created_at, he.changed_at
+		FROM reportes AS r
+		JOIN LATERAL (
+			SELECT h.estado, h.changed_at
+			FROM historial_estados AS h
+			WHERE h.reporte_id = r.id
+			ORDER BY h.changed_at DESC, h.id DESC
+			LIMIT 1
+		) AS he ON TRUE
+		WHERE r.folio = $1
+			AND r.clave_consulta = $2
+			AND he.estado <> 'DRAFT'
+	`
+	var st models.PublicReportStatus
+	err := pool.QueryRow(ctx, query, folio, accessKey).Scan(&st.Folio, &st.Status, &st.CreatedAt, &st.StateChangedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
+// PublicStatus convierte el estado interno en un estado visible para el ciudadano.
+func PublicStatus(status string) string {
+	switch status {
+	case "registrado":
+		return "recibido"
+	case "canalizado":
+		return "canalizado"
+	case "en_atencion", "en_seguimiento":
+		return "en_atencion"
+	case "concluido", "archivado", "cancelado":
+		return "concluido"
+	case "DRAFT":
+		return "borrador"
+	default:
+		// en_revision, validado, caso_confirmado, reincidente, duplicado
+		return "en_revision"
+	}
+}
+
+func GetAllAlimentadores(pool *pgxpool.Pool, zoneID string) ([]models.AlimentadorForEmail, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const query = `
+  select u.nombre, u.email from admins a
+  inner join usuarios u on a.id = u.id
+  where zona_id = $1 and a.estado_cuenta = 'activada';
+ `
+	rows, err := pool.Query(ctx, query, zoneID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[models.AlimentadorForEmail])
 }
 
 // UpdateReportAssignment cambia la categoría y la zona del reporte folio.

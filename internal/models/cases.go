@@ -1,17 +1,23 @@
 package models
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+	"time"
+)
 
 type Case struct {
-	CaseID      uuid.UUID `db:"id"`
-	Name        string    `db:"nombre"`
-	Description string    `db:"descripcion"`
+	CaseID      uuid.UUID  `json:"id" db:"id"`
+	Name        string     `json:"name" db:"nombre"`
+	Description string     `json:"description" db:"descripcion"`
+	ZoneID      *uuid.UUID `json:"zone_id"`
+	ReportCount int        `json:"report_count"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 type CreateCase struct {
-	Name        string   `json:"name"`
+	Name        string   `json:"name" binding:"required,max=200"`
 	Description string   `json:"description"`
-	Folios      []string `json:"folios"`
+	Folios      []string `json:"folios" binding:"required,min=1,dive,required"`
 }
 
 type UpdateCase struct {

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"go-service-sipinna/internal/config"
-	"html"
+	"net/url"
 	"strings"
 
 	"github.com/resend/resend-go/v4"
@@ -63,8 +63,7 @@ func send(ctx context.Context, cfg *config.Config, recipientEmail, subject, html
 	return nil
 }
 
-// SendStaffInvitation envía a recipientEmail la invitación para activar su cuenta de
-// personal.
+// SendStaffInvitation envía a recipientEmail la invitación para activar su cuenta de personal.
 func SendStaffInvitation(ctx context.Context, cfg *config.Config, recipientEmail, name, roleLabel, link string, hours int) error {
 	greeting := "Hola"
 	if name = strings.TrimSpace(name); name != "" {
@@ -82,19 +81,44 @@ func SendStaffInvitation(ctx context.Context, cfg *config.Config, recipientEmail
 	return send(ctx, cfg, recipientEmail, "Tu invitación a SIPINNA", body, text)
 }
 
-// SendOneNotification avisa a un alimentador que se registró un reporte nuevo.
-func SendOneNotification(ctx context.Context, cfg *config.Config, name, email string) error {
+// SendOneNotification avisa a un alimentador de un reporte nuevo
+func SendOneNotification(ctx context.Context, cfg *config.Config, name, email string, urgent bool) error {
 	greeting := "Hola"
 	if name = strings.TrimSpace(name); name != "" {
 		greeting += " " + name
 	}
 
-	body := fmt.Sprintf(`<div style="font-family:Arial,sans-serif;color:#1f2937">
-  <p>%s,</p>
-  <p>Se registró un reporte nuevo en tu zona de SIPINNA. Entra a la plataforma para revisarlo.</p>
-</div>`, html.EscapeString(greeting))
+	subject := "Nuevo reporte en tu zona de SIPINNA"
+	message := "Se registró un reporte nuevo en tu zona de SIPINNA. Entra a la plataforma para revisarlo."
+	if urgent {
+		subject = "URGENTE: reporte con peligro inmediato en tu zona de SIPINNA"
+		message = "Se registró un reporte en tu zona que indica que una niña, niño o adolescente está en peligro inmediato. Tiene prioridad alta: revísalo y activa el protocolo correspondiente."
+	}
 
-	text := fmt.Sprintf("%s,\n\nSe registró un reporte nuevo en tu zona de SIPINNA. Entra a la plataforma para revisarlo.\n", greeting)
+	link := strings.TrimRight(cfg.FrontendURL, "/") + "/reports"
+	body, err := renderReportNotificationEmail(greeting, message, link, urgent)
+	if err != nil {
+		return err
+	}
 
-	return send(ctx, cfg, email, "Nuevo reporte en tu zona de SIPINNA", body, text)
+	text := fmt.Sprintf("%s,\n\n%s\n\nRevisar reportes: %s\n", greeting, message, link)
+
+	return send(ctx, cfg, email, subject, body, text)
+}
+
+// SendReportReceipt envía el folio y la clave de consulta al ciudadano.
+func SendReportReceipt(ctx context.Context, cfg *config.Config, email, folio, accessKey string) error {
+	link := strings.TrimRight(cfg.FrontendURL, "/") + "/consultar-folio?" + url.Values{
+		"folio": {folio},
+		"clave": {accessKey},
+	}.Encode()
+
+	body, err := renderReportReceiptEmail(folio, accessKey, link)
+	if err != nil {
+		return err
+	}
+
+	text := fmt.Sprintf("¡Gracias por ayudar a proteger los derechos de niñas, niños y adolescentes!\n\nTu reporte fue recibido correctamente.\nFolio: %s\nClave de consulta: %s\n\nConsulta el avance: %s\n", folio, accessKey, link)
+
+	return send(ctx, cfg, email, "Tu reporte RIETI "+folio, body, text)
 }

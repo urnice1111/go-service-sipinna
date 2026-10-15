@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"errors"
-	"fmt"
 	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/middleware"
 	"go-service-sipinna/internal/models"
@@ -20,51 +19,37 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// CreateReport es el cuerpo de POST /report.
+// CreateReport recibe el reporte, el contacto es opcional para seguimiento sin cuenta
 type CreateReport struct {
-	Description      string  `json:"description" db:"descripcion"`
-	Latitude         float32 `json:"latitude" db:"latitud"`
-	Longitude        float32 `json:"longitude" db:"longitud"`
-	ChildrenQuantity int     `json:"children_quantity" db:"cantidad_ninos"`
-	ChildrenAge      string  `json:"children_age" db:"edad_ninos"`
-	WorkType         string  `json:"work_type" db:"tipo_trabajo"`
-	SightingTime     string  `json:"sighting_time" db:"horario_avistamiento"`
+	Description      string  `json:"description"`
+	Latitude         float32 `json:"latitude"`
+	Longitude        float32 `json:"longitude"`
+	ChildrenQuantity *int    `json:"children_quantity" binding:"omitempty,min=1,max=5"`
+	ChildrenAge      string  `json:"children_age"`
+	WorkType         string  `json:"work_type"`
+	SightingTime     string  `json:"sighting_time"`
+	Risk             string  `json:"risk" binding:"omitempty,oneof=si no no_se"`
+	ImmediateDanger  bool    `json:"immediate_danger"`
+	Neighborhood     string  `json:"neighborhood" binding:"max=200"`
+	Reference        string  `json:"reference" binding:"max=500"`
+	ContactEmail     string  `json:"contact_email" binding:"omitempty,email"`
+	ContactPhone     string  `json:"contact_phone" binding:"omitempty,max=20"`
 }
 
-// CreateReportHandler maneja POST /report. Con sesión, el reporte queda a nombre del
-// usuario y responde {"reporte_id": <uuid>}. Sin cookie, el reporte es anónimo y la
-// respuesta también incluye "edit_token". La zona y el folio
-// (RIETI-<MUNICIPIO>-<AÑO>-<consecutivo>) se asignan en la base de datos según la
-// zona más cercana a las coordenadas.
-//
-// El reporte nace como borrador; se envía con [UpdateReport] cuando terminan de
-// subirse sus fotos.
+// CreateReportHandler crea un borrador y devuelve ID, folio y clave de consulta.
+// Sin sesión también devuelve edit_token. La zona se asigna por cercanía.
+// El reporte se envía con UpdateReport después de subir las fotos.
 func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString("user_id")
-		nonExisting := c.GetBool("is_admin")
-		if !nonExisting {
-			fmt.Println("no existe")
-		} else {
-			fmt.Println("si existe")
-		}
 
-		fmt.Println(userID)
 		var req CreateReport
-		if err := c.BindJSON(&req); err != nil {
+		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
-		idV7, err := uuid.NewV7()
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate uuid" + err.Error()})
-			return
-		}
-
 		report := &models.Report{
-			ID:               idV7,
 			Description:      req.Description,
 			Latitude:         req.Latitude,
 			Longitude:        req.Longitude,
@@ -72,6 +57,12 @@ func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc
 			ChildrenAge:      req.ChildrenAge,
 			WorkType:         req.WorkType,
 			SightingTime:     req.SightingTime,
+			Risk:             req.Risk,
+			ImmediateDanger:  req.ImmediateDanger,
+			Neighborhood:     strings.TrimSpace(req.Neighborhood),
+			Reference:        strings.TrimSpace(req.Reference),
+			ContactEmail:     strings.TrimSpace(req.ContactEmail),
+			ContactPhone:     strings.TrimSpace(req.ContactPhone),
 		}
 
 		var citizenID *string
@@ -83,14 +74,14 @@ func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc
 			tempKey = &key
 		}
 
-		newReport, err := repository.CreateReport(pool, report, citizenID, tempKey)
+		accessKey, err := repository.CreateReport(pool, report, citizenID, tempKey)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		body := gin.H{"reporte_id": newReport.ID}
+		body := gin.H{"reporte_id": report.ID, "folio": report.Folio, "clave_consulta": accessKey}
 		if tempKey != nil {
 			body["edit_token"] = tempKey.String()
 		}
@@ -108,7 +99,7 @@ func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc
 // cada archivo mediante [UploadToS3].
 func RegisterImagesRows(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		reportID := c.Param("report_id")
+		reportID := c.Param("report_ref")
 
 		if reportID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "You must provide a valid report id"})
@@ -118,8 +109,6 @@ func RegisterImagesRows(pool *pgxpool.Pool) gin.HandlerFunc {
 		if !requireReportEditor(c, pool, reportID) {
 			return
 		}
-
-		fmt.Println(reportID)
 
 		var req models.ImagesRequest
 		if err := c.BindJSON(&req); err != nil {
@@ -211,13 +200,17 @@ func GetUsersReports(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
+		// El ciudadano solo ve el estado general
+		for i := range reportsBrief {
+			reportsBrief[i].State = repository.PublicStatus(reportsBrief[i].State)
+		}
+
 		c.JSON(http.StatusOK, gin.H{"reports": reportsBrief})
 
 	}
 }
 
-// UpdateReportStatusRequest es el cuerpo de PATCH /report/:folio/status.
-// Reason (motivo) es obligatorio para los estados de reportStatusesRequiringReason.
+// UpdateReportStatusRequest recibe el estado y el motivo cuando es obligatorio
 type UpdateReportStatusRequest struct {
 	Status string `json:"estado" binding:"required"`
 	Reason string `json:"motivo"`
@@ -226,14 +219,18 @@ type UpdateReportStatusRequest struct {
 // validReportStatuses son los estados a los que el personal puede mover un reporte
 // (valores del enum report_status, excepto DRAFT).
 var validReportStatuses = map[string]bool{
-	"registrado":     true,
-	"en_revision":    true,
-	"en_seguimiento": true,
-	"canalizado":     true,
-	"concluido":      true,
-	"archivado":      true,
-	"cancelado":      true,
-	"reincidente":    true,
+	"registrado":      true,
+	"en_revision":     true,
+	"validado":        true,
+	"caso_confirmado": true,
+	"canalizado":      true,
+	"en_atencion":     true,
+	"en_seguimiento":  true,
+	"concluido":       true,
+	"archivado":       true,
+	"cancelado":       true,
+	"reincidente":     true,
+	"duplicado":       true,
 }
 
 // reportStatusesRequiringReason son los estados que exigen un motivo al asignarse.
@@ -241,6 +238,7 @@ var reportStatusesRequiringReason = map[string]bool{
 	"cancelado":   true,
 	"archivado":   true,
 	"reincidente": true,
+	"duplicado":   true,
 }
 
 // UpdateReportStatusHandler maneja PATCH /report/:folio/status: agrega un nuevo
@@ -255,7 +253,7 @@ func UpdateReportStatusHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
-		folio := strings.TrimSpace(c.Param("folio"))
+		folio := strings.TrimSpace(c.Param("report_ref"))
 
 		var req UpdateReportStatusRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -306,7 +304,7 @@ func ReportAssignment(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
-		folio := strings.TrimSpace(c.Param("folio"))
+		folio := strings.TrimSpace(c.Param("report_ref"))
 
 		var req models.ReportAssignment
 		err := c.ShouldBindJSON(&req)
@@ -413,7 +411,7 @@ func requireActiveStaff(c *gin.Context, pool *pgxpool.Pool) (uuid.UUID, *uuid.UU
 // - Ciudadano: solo sus propios reportes, sin el nivel de sospecha ni su nombre.
 func GetReportByFolioHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		folio := strings.TrimSpace(c.Param("folio"))
+		folio := strings.TrimSpace(c.Param("report_ref"))
 		if folio == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "you must provide a folio"})
 			return
@@ -447,8 +445,16 @@ func GetReportByFolioHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		// El ciudadano no debe ver el análisis de sospecha de su propio reporte
 		if citizenID != nil {
+			report = &models.ReportDetail{IndividualReport: report.IndividualReport, Images: report.Images}
 			report.SuspiciusLevel = nil
 			report.CitizenName = ""
+			report.LastState = repository.PublicStatus(report.LastState)
+			report.Priority = ""
+			report.Sex = ""
+			report.DuplicateOf = ""
+			report.ChildrenCared = nil
+			report.CaseID = nil
+			report.CaseName = nil
 		}
 
 		c.JSON(http.StatusOK, gin.H{"report": report})
@@ -467,7 +473,7 @@ func DeleteReportHandler(pool *pgxpool.Pool, uploader *S3Uploader) gin.HandlerFu
 			return
 		}
 
-		folio := strings.TrimSpace(c.Param("folio"))
+		folio := strings.TrimSpace(c.Param("report_ref"))
 		if folio == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "you must provide a folio"})
 			return
@@ -493,12 +499,11 @@ func DeleteReportHandler(pool *pgxpool.Pool, uploader *S3Uploader) gin.HandlerFu
 	}
 }
 
-// UpdateReport maneja PUT /report/:report_id/submit: envía el reporte, es decir, lo
-// pasa del borrador al estado "registrado". Falla si alguna de sus imágenes sigue
-// pendiente de subir. Una vez enviado, el worker de análisis lo evalúa.
+// UpdateReport envía el borrador cuando todas las fotos están listas
+// Notifica al personal de la zona y envía folio y clave al correo de contacto
 func UpdateReport(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		reportID := c.Param("report_id")
+		reportID := c.Param("report_ref")
 
 		if reportID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -511,35 +516,43 @@ func UpdateReport(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		fmt.Println(reportID)
-
-		zoneID, err := repository.UpdateReportDraft(pool, reportID)
+		submitted, err := repository.UpdateReportDraft(pool, reportID)
 
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": err,
+				"error": err.Error(),
 			})
 			return
 		}
 
-		go SendNotifications(pool, cfg, zoneID.String())
+		go SendNotifications(pool, cfg, submitted.ZoneID.String(), submitted.ImmediateDanger)
+
+		if submitted.ContactEmail != nil {
+			go func(email, folio, key string) {
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				if err := resend.SendReportReceipt(ctx, cfg, email, folio, key); err != nil {
+					log.Printf("could not send receipt of report %s: %v", folio, err)
+				}
+			}(*submitted.ContactEmail, submitted.Folio, submitted.AccessKey.String())
+		}
 
 		c.JSON(http.StatusOK, true)
 
 	}
 }
 
-func SendNotifications(pool *pgxpool.Pool, cfg *config.Config, zoneID string) {
+func SendNotifications(pool *pgxpool.Pool, cfg *config.Config, zoneID string, urgent bool) {
 	alimentadores, err := repository.GetAllAlimentadores(pool, zoneID)
 	if err != nil {
 		log.Printf("could not list alimentadores for zone %s: %v", zoneID, err)
 		return
 	}
-	for _, alimentador := range *alimentadores {
+	for _, alimentador := range alimentadores {
 		go func(name, email string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			if err := resend.SendOneNotification(ctx, cfg, name, email); err != nil {
+			if err := resend.SendOneNotification(ctx, cfg, name, email, urgent); err != nil {
 				log.Printf("could not notify %s: %v", email, err)
 			}
 		}(alimentador.Name, alimentador.Email)

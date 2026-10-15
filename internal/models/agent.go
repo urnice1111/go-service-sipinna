@@ -7,9 +7,9 @@ type ElevenLabsRequest struct {
 	Description  string     `json:"description"`
 	Place        string     `json:"place"`
 	NNAQuantity  int        `json:"children_quantity"`
-	NNAAge       string     `json:"children_age`
+	NNAAge       string     `json:"children_age"`
 	WorkType     string     `json:"work_type"`
-	SightingTime string     `json:"sighting_time`
+	SightingTime string     `json:"sighting_time"`
 }
 
 type GeoCode struct {

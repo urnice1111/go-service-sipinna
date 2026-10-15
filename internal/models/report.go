@@ -18,17 +18,23 @@ type Report struct {
 	Description      string     `json:"description" db:"descripcion"`
 	Latitude         float32    `json:"latitude" db:"latitud"`
 	Longitude        float32    `json:"longitude" db:"longitud"`
-	ChildrenQuantity int        `json:"children_quantity" db:"cantidad_ninos"`
+	ChildrenQuantity *int       `json:"children_quantity" db:"cantidad_ninos"`
 	ChildrenAge      string     `json:"children_age" db:"edad_ninos"`
 	WorkType         string     `json:"work_type" db:"tipo_trabajo"`
 	SightingTime     string     `json:"sighting_time" db:"horario_avistamiento"`
+	Risk             string     `json:"risk" db:"riesgo"`
+	ImmediateDanger  bool       `json:"immediate_danger" db:"peligro_inmediato"`
+	Neighborhood     string     `json:"neighborhood" db:"colonia"`
+	Reference        string     `json:"reference" db:"referencia"`
+	ContactEmail     string     `json:"-" db:"contacto_email"`
+	ContactPhone     string     `json:"-" db:"contacto_telefono"`
 	ZoneID           uuid.UUID  `json:"zone_id" db:"zona_id"`
 	CasoID           uuid.UUID  `json:"case_id" db:"caso_id"`
 	State            string     `json:"state" db:"-"`
 	SuspiciusLevel   float64    `json:"suspicius_level" db:"sospechoso"`
 	LLMAnalizedAt    time.Time  `json:"llm_analized_at" db:"llm_analizado_at"`
 	DeleteDate       time.Time  `json:"delete_date" db:"fecha_eliminacion_programada"`
-	CreatedAt        time.Time  `json:"created_at" db: "created_at"`
+	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
 }
 
@@ -38,38 +44,105 @@ type Report struct {
 // SuspiciusLevel es nil cuando el reporte aún no se analiza o cuando se oculta
 // al ciudadano dueño del reporte.
 type IndividualReport struct {
-	Folio            string    `json:"folio" db:"folio"`
-	Description      string    `json:"description" db:"descripcion"`
-	Latitude         float32   `json:"latitude" db:"latitud"`
-	Longitude        float32   `json:"longitude" db:"longitud"`
-	ChildrenQuantity int       `json:"children_quantity" db:"cantidad_ninos"`
-	WorkType         string    `json:"work_type" db:"tipo_trabajo"`
-	CreatedtAt       time.Time `json:"created_at" db:"created_at"`
-	SuspiciusLevel   *float64  `json:"suspicius_level" db:"sospechoso"`
-	ChildrenAge      string    `json:"children_age" db:"edad_ninos"`
-	ZoneName         string    `json:"zone_name" db:"nombre_zona"`
-	CitizenName      string    `json:"citizen_name" db:"nombre_ciudadano"`
-	LastState        string    `json:"last_state" db:"ultimo_estado"`
-	StateChangedAt   time.Time `json:"state_changed_at" db:"estado_changed_at"`
+	CaseID           *uuid.UUID `json:"case_id"`
+	CaseName         *string    `json:"case_name"`
+	Folio            string     `json:"folio" db:"folio"`
+	Description      string     `json:"description" db:"descripcion"`
+	Latitude         float32    `json:"latitude" db:"latitud"`
+	Longitude        float32    `json:"longitude" db:"longitud"`
+	ChildrenQuantity *int       `json:"children_quantity" db:"cantidad_ninos"`
+	WorkType         string     `json:"work_type" db:"tipo_trabajo"`
+	CreatedtAt       time.Time  `json:"created_at" db:"created_at"`
+	SuspiciusLevel   *float64   `json:"suspicius_level" db:"sospechoso"`
+	ChildrenAge      string     `json:"children_age" db:"edad_ninos"`
+	ZoneName         string     `json:"zone_name" db:"nombre_zona"`
+	CitizenName      string     `json:"citizen_name" db:"nombre_ciudadano"`
+	LastState        string     `json:"last_state" db:"ultimo_estado"`
+	StateChangedAt   time.Time  `json:"state_changed_at" db:"estado_changed_at"`
+	SightingTime     string     `json:"sighting_time" db:"horario_avistamiento"`
+	Risk             string     `json:"risk" db:"riesgo"`
+	ImmediateDanger  bool       `json:"immediate_danger" db:"peligro_inmediato"`
+	Priority         string     `json:"priority" db:"prioridad"`
+	Sex              string     `json:"sex" db:"sexo"`
+	Neighborhood     string     `json:"neighborhood" db:"colonia"`
+	Reference        string     `json:"reference" db:"referencia"`
+	// DuplicateOf es el folio del reporte del que este podría ser duplicado.
+	DuplicateOf   string `json:"duplicate_of" db:"folio_duplicado"`
+	ChildrenCared *int   `json:"children_cared" db:"nna_atendidos"`
 }
 
 // IndividualReportInfoBrief es el resumen de un reporte que ve el ciudadano en
 // la lista de sus propios reportes (GET /report).
 type IndividualReportInfoBrief struct {
-	Folio       string  `json:"folio" db:"folio"`
-	State       string  `json:"report_state" db:"report_state"`
-	Latitude    float32 `json:"latitude" db:"latitud"`
-	Longitude   float32 `json:"longitude" db:"longitud"`
-	Description string  `json:"description" db:"description"`
+	Folio          string    `json:"folio" db:"folio"`
+	State          string    `json:"report_state" db:"report_state"`
+	Latitude       float32   `json:"latitude" db:"latitud"`
+	Longitude      float32   `json:"longitude" db:"longitud"`
+	Description    string    `json:"description" db:"description"`
+	CreatedAt      time.Time `json:"created_at"`
+	StateChangedAt time.Time `json:"state_changed_at"`
 }
 
-// ReportDetail es el detalle completo de un reporte (GET /report/:folio).
+// ReportDetail incluye expediente interno y fotos.
 type ReportDetail struct {
 	IndividualReport
-	// SightingTime es el horario aproximado en que se vio a los menores.
-	SightingTime string `json:"sighting_time"`
+	Responsible  string `json:"responsible"`
+	ChanneledTo  string `json:"channeled_to"`
+	FollowUpDate string `json:"follow_up_date"`
+	Outcome      string `json:"outcome"`
+	ClosedDate   string `json:"closed_date"`
 	// Images son URLs prefirmadas de S3 con vigencia corta (15 minutos).
 	Images []string `json:"images"`
+}
+
+// CaseFile actualiza el expediente: null conserva el valor; una cadena vacía lo borra.
+// DuplicateOf recibe el folio original.
+type CaseFile struct {
+	Priority      *string `json:"priority"`
+	Sex           *string `json:"sex"`
+	Neighborhood  *string `json:"neighborhood"`
+	Responsible   *string `json:"responsible"`
+	ChanneledTo   *string `json:"channeled_to"`
+	FollowUpDate  *string `json:"follow_up_date"`
+	Outcome       *string `json:"outcome"`
+	ChildrenCared *int    `json:"children_cared"`
+	ClosedDate    *string `json:"closed_date"`
+	DuplicateOf   *string `json:"duplicate_of"`
+}
+
+// ReportAction es una acción realizada sobre un reporte (tabla comentarios).
+type ReportAction struct {
+	ID        uuid.UUID `json:"id"`
+	Text      string    `json:"text"`
+	StaffName string    `json:"staff_name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// PublicReportStatus contiene el estado visible sin sesión.
+type PublicReportStatus struct {
+	Folio          string    `json:"folio"`
+	Status         string    `json:"status"`
+	CreatedAt      time.Time `json:"created_at"`
+	StateChangedAt time.Time `json:"state_changed_at"`
+}
+
+// SubmittedReport contiene los datos para notificar el envío.
+type SubmittedReport struct {
+	ZoneID          uuid.UUID
+	Folio           string
+	AccessKey       uuid.UUID
+	ContactEmail    *string
+	ImmediateDanger bool
+}
+
+// LogEntry es una fila de la bitácora de accesos.
+type LogEntry struct {
+	UserName  string    `json:"user_name"`
+	Method    string    `json:"method"`
+	Path      string    `json:"path"`
+	Status    int       `json:"status"`
+	IP        string    `json:"ip"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // ReportAssignment es el cuerpo de PATCH /report/:folio/assignment.

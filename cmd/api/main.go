@@ -31,6 +31,11 @@
 //	GET    /report/zone/:zone_id           reportes de una zona
 //	GET    /report/:folio                  detalle de un reporte
 //	PATCH  /report/:folio/status           cambia el estado de un reporte
+//	PATCH  /report/:folio/expediente       actualiza el expediente interno
+//	GET    /report/:folio/acciones         acciones realizadas sobre un reporte
+//	POST   /report/:folio/acciones         registra una acción
+//	GET    /public/report/:folio?clave=    estado general de un reporte, sin sesión
+//	GET    /admin/bitacora                 bitácora de accesos del personal
 //	DELETE /report/:folio                  elimina un reporte y sus fotos
 //	POST   /report/:report_id/images       registra las fotos que se van a subir
 //	PUT    /report/:report_id/images/:id   sube una foto a S3
@@ -122,6 +127,7 @@ func main() {
 	}))
 
 	router.Use(middleware.AccountSession(pool, cfg))
+	router.Use(middleware.AuditLog(pool))
 
 	router.POST("/auth/citizen", handlers.CitizenSignInHandler(pool, cfg))
 	router.POST("/auth/login", handlers.LoginHandler(pool, cfg))
@@ -142,6 +148,8 @@ func main() {
 	account.PUT("", handlers.UpdateProfileHandler(pool))
 	account.DELETE("", handlers.DeleteAccountHandler(pool))
 	router.GET("/zones", middleware.AuthRequired(), handlers.GetZones(pool))
+	router.GET("/public/report/:folio", handlers.GetPublicReportStatusHandler(pool))
+	router.GET("/admin/bitacora", middleware.AuthRequired(), handlers.GetLogHandler(pool))
 
 	// Gestión de cuentas solo para administradores activos.
 	staff := router.Group("/admin/staff")
@@ -160,11 +168,18 @@ func main() {
 		cases.POST("", handlers.CreateCase(pool))
 	}
 
+	registerReportRoutes(router, pool, cfg, uploader)
+
+	router.Run(":" + cfg.Port)
+}
+
+// registerReportRoutes comparte el parámetro report_ref entre UUID y folio, como exige Gin.
+func registerReportRoutes(router *gin.Engine, pool *pgxpool.Pool, cfg *config.Config, uploader *handlers.S3Uploader) {
 	report := router.Group("/report")
 	report.POST("", middleware.OptionalAuth(), handlers.CreateReportHandler(pool, cfg))
-	report.POST("/:report_id/images", handlers.RegisterImagesRows(pool))
-	report.PUT("/:report_id/images/:image_id", handlers.UploadToS3(uploader, pool))
-	report.PUT("/:report_id/submit", handlers.UpdateReport(pool, cfg))
+	report.POST("/:report_ref/images", handlers.RegisterImagesRows(pool))
+	report.PUT("/:report_ref/images/:image_id", handlers.UploadToS3(uploader, pool))
+	report.PUT("/:report_ref/submit", handlers.UpdateReport(pool, cfg))
 
 	authedReport := report.Group("")
 	authedReport.Use(middleware.AuthRequired())
@@ -172,13 +187,13 @@ func main() {
 		authedReport.GET("", handlers.GetUsersReports(pool))
 		authedReport.GET("/all", handlers.GetAllReports(pool))
 		authedReport.GET("/zone/:zone_id", handlers.GetReportsByZone(pool))
-		authedReport.GET("/:folio", handlers.GetReportByFolioHandler(pool))
-		authedReport.PATCH("/:folio/status", handlers.UpdateReportStatusHandler(pool))
-		authedReport.PATCH("/:folio/assignment", handlers.ReportAssignment(pool))
-		authedReport.PATCH("/:folio/case", handlers.UpdateReportsCase(pool))
-		authedReport.DELETE("/:folio", handlers.DeleteReportHandler(pool, uploader))
+		authedReport.GET("/:report_ref", handlers.GetReportByFolioHandler(pool))
+		authedReport.PATCH("/:report_ref/status", handlers.UpdateReportStatusHandler(pool))
+		authedReport.PATCH("/:report_ref/assignment", handlers.ReportAssignment(pool))
+		authedReport.PATCH("/:report_ref/case", handlers.UpdateReportsCase(pool))
+		authedReport.PATCH("/:report_ref/expediente", handlers.UpdateCaseFileHandler(pool))
+		authedReport.GET("/:report_ref/acciones", handlers.GetReportActionsHandler(pool))
+		authedReport.POST("/:report_ref/acciones", handlers.AddReportActionHandler(pool))
+		authedReport.DELETE("/:report_ref", handlers.DeleteReportHandler(pool, uploader))
 	}
-
-	router.Run(":" + cfg.Port)
-
 }

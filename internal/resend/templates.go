@@ -25,6 +25,10 @@ type emailContent struct {
 	Title, Preheader, Greeting, Role, ActionURL, Code string
 	Validity                                          int
 	Invitation                                        bool
+	Notification, Urgent                              bool
+	Message                                           string
+	Receipt                                           bool
+	Folio, AccessKey                                  string
 }
 
 func renderPasswordResetEmail(greeting, code string, minutes int) (string, error) {
@@ -38,6 +42,24 @@ func renderStaffInvitationEmail(greeting, role, link string, hours int) (string,
 	return renderEmail(emailContent{
 		Title: "Te damos la bienvenida a SIPINNA", Preheader: "Acepta tu invitación y activa tu cuenta de personal.",
 		Greeting: greeting, Role: role, ActionURL: link, Validity: hours, Invitation: true,
+	})
+}
+
+func renderReportNotificationEmail(greeting, message, link string, urgent bool) (string, error) {
+	title := "Nuevo reporte en tu zona"
+	if urgent {
+		title = "Reporte con peligro inmediato"
+	}
+	return renderEmail(emailContent{
+		Title: title, Preheader: message, Greeting: greeting, Message: message,
+		ActionURL: link, Notification: true, Urgent: urgent,
+	})
+}
+
+func renderReportReceiptEmail(folio, accessKey, link string) (string, error) {
+	return renderEmail(emailContent{
+		Title: "Recibimos tu reporte", Preheader: "Consulta el avance de tu reporte con tu folio y clave de consulta.",
+		Greeting: "Hola", Receipt: true, Folio: folio, AccessKey: accessKey, ActionURL: link,
 	})
 }
 

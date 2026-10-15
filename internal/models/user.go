@@ -23,7 +23,7 @@ type User struct {
 	HashedPassword  string    `json:"-" db:"password_hash"`
 	ZoneID          *string   `json:"zona_id,omitempty" db:"zona_id"`
 	AccountState    string    `json:"estado_cuenta" db:"estado_cuenta"`
-	CreatedAt       time.Time `json:"created_at" db: "created_at"`
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
 }
 
@@ -31,4 +31,3 @@ type AlimentadorForEmail struct {
 	Name  string
 	Email string
 }
-
