@@ -50,6 +50,7 @@ import (
 	"go-service-sipinna/internal/database"
 	"go-service-sipinna/internal/handlers"
 	"go-service-sipinna/internal/middleware"
+	"go-service-sipinna/internal/twilio_messages"
 	"log"
 	"os"
 	"strings"
@@ -89,6 +90,8 @@ func main() {
 	}
 
 	defer pool.Close()
+
+	client := twilio_messages.GetTwilioClient(cfg)
 
 	// Analiza en segundo plano qué tan probable es que cada reporte nuevo sea falso
 	// y guarda el resultado en la columna "sospechoso" (0 = legítimo, 1 = falso).
@@ -133,7 +136,7 @@ func main() {
 	router.POST("/auth/login", handlers.LoginHandler(pool, cfg))
 	router.POST("/auth/google", handlers.GoogleLoginHandler(pool, cfg))
 	router.POST("/auth/logout", handlers.LogoutHandler)
-	router.POST("/auth/password/forgot", handlers.ForgotPasswordHandler(pool, cfg))
+	router.POST("/auth/password/forgot", handlers.ForgotPasswordHandler(pool, cfg, client))
 	router.POST("/auth/password/reset", handlers.ResetPasswordHandler(pool))
 	router.POST("/auth/invitation", handlers.GetInvitationHandler(pool))
 	router.POST("/auth/invitation/accept", handlers.AcceptInvitationHandler(pool, cfg))

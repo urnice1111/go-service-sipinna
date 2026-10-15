@@ -7,6 +7,7 @@ import (
 	"go-service-sipinna/internal/config"
 	"go-service-sipinna/internal/repository"
 	"go-service-sipinna/internal/resend"
+	"go-service-sipinna/internal/twilio_messages"
 	"log"
 	"math/big"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/twilio/twilio-go"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -50,7 +52,7 @@ type ResetPasswordRequest struct {
 //
 // Responde 200 con {"message": ...} aunque el correo no esté registrado, 429 si se
 // pidió otro código hace menos de un minuto y 502 si Resend no pudo enviar el correo.
-func ForgotPasswordHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
+func ForgotPasswordHandler(pool *pgxpool.Pool, cfg *config.Config, client *twilio.RestClient) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req ForgotPasswordRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -58,12 +60,12 @@ func ForgotPasswordHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFu
 			return
 		}
 
-		email, ok := passwordResetEmail(c, req.Email, req.Phone)
+		email, phone, ok := passwordResetEmail(c, req.Email, req.Phone)
 		if !ok {
 			return
 		}
 
-		user, err := repository.GetUserByContact(pool, email, "")
+		user, err := repository.GetUserByContact(pool, email, phone)
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusOK, gin.H{"message": forgotPasswordMessage})
 			return
@@ -108,13 +110,23 @@ func ForgotPasswordHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFu
 		}
 
 		minutes := int(passwordResetCodeTTL / time.Minute)
-		if err := resend.SendPasswordResetCode(c.Request.Context(), cfg, email, user.Name, code, minutes); err != nil {
-			log.Printf("could not send password reset email to user %s: %v", user.ID, err)
-			if err := repository.DiscardPasswordResetCode(pool, user.ID); err != nil {
-				log.Printf("could not discard password reset code of user %s: %v", user.ID, err)
+
+		if email != "" {
+			if err := resend.SendPasswordResetCode(c.Request.Context(), cfg, email, user.Name, code, minutes); err != nil {
+				log.Printf("could not send password reset email to user %s: %v", user.ID, err)
+				if err := repository.DiscardPasswordResetCode(pool, user.ID); err != nil {
+					log.Printf("could not discard password reset code of user %s: %v", user.ID, err)
+				}
+				c.JSON(http.StatusBadGateway, gin.H{"error": "No se pudo enviar el correo. Inténtalo de nuevo más tarde."})
+				return
 			}
-			c.JSON(http.StatusBadGateway, gin.H{"error": "No se pudo enviar el correo. Inténtalo de nuevo más tarde."})
-			return
+		}
+		if phone != "" {
+			body := "Tu codigo para recuperar tu cuenta es: " + code
+			if err := twilio_messages.SendSMS(client, body, phone); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+				return
+			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{"message": forgotPasswordMessage})
@@ -135,7 +147,7 @@ func ResetPasswordHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
-		email, ok := passwordResetEmail(c, req.Email, req.Phone)
+		email, phone, ok := passwordResetEmail(c, req.Email, req.Phone)
 		if !ok {
 			return
 		}
@@ -147,7 +159,7 @@ func ResetPasswordHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 		invalidCode := gin.H{"error": "El código no es válido o ya venció."}
 
-		user, err := repository.GetUserByContact(pool, email, "")
+		user, err := repository.GetUserByContact(pool, email, phone)
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusBadRequest, invalidCode)
 			return
@@ -189,19 +201,26 @@ func ResetPasswordHandler(pool *pgxpool.Pool) gin.HandlerFunc {
 
 // passwordResetEmail valida que el cuerpo traiga solo correo y lo regresa recortado.
 // Si regresa false, la respuesta de error ya se escribió.
-func passwordResetEmail(c *gin.Context, email, phone *string) (string, bool) {
-	if stringValue(phone) != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Por ahora la contraseña solo se puede recuperar con correo electrónico."})
-		return "", false
+func passwordResetEmail(c *gin.Context, email, phone *string) (string, string, bool) {
+
+	gottenEmail := stringValue(email)
+	gottenPhone := stringValue(phone)
+
+	if gottenEmail == "" && gottenPhone == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Nor email or phone provided"})
+		return "", "", false
 	}
 
-	value := stringValue(email)
-	if value == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Ingresa tu correo."})
-		return "", false
+	if gottenEmail != "" && gottenPhone != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Provided both, expected only one"})
+		return "", "", false
 	}
 
-	return value, true
+	if gottenEmail != "" {
+		return gottenEmail, "", true
+	}
+
+	return "", gottenPhone, true
 }
 
 // generateResetCode regresa un código aleatorio de 6 dígitos.

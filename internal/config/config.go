@@ -29,9 +29,12 @@ type Config struct {
 	// "SIPINNA <no-reply@sipinna.com>"; el dominio debe estar verificado en Resend.
 	SipinnaResendFrom string
 	// Proyecto de Supabase usado solo para validar los inicios de sesión con Google
-	SupabaseURL     string
-	SupabaseAnonKey string
-	TwilioKey       string
+	SupabaseURL      string
+	SupabaseAnonKey  string
+	TwilioKey        string
+	TwilioAccountSID string
+	TwilioApiKey     string
+	TwilioApiSecret  string
 }
 
 // Load lee la configuración de las variables de entorno. Si existe un archivo .env
@@ -54,6 +57,9 @@ func Load() (*Config, error) {
 		SupabaseURL:         strings.TrimRight(strings.TrimSpace(os.Getenv("SUPABASE_URL")), "/"),
 		SupabaseAnonKey:     strings.TrimSpace(os.Getenv("SUPABASE_ANON_KEY")),
 		TwilioKey:           os.Getenv("TWILIO_KEY"),
+		TwilioApiKey:        os.Getenv("TWILIO_API_KEY"),
+		TwilioAccountSID:    os.Getenv("TWILIO_ACCOUNT_SID"),
+		TwilioApiSecret:     os.Getenv("TWILIO_API_SECRET"),
 	}
 
 	if strings.TrimSpace(config.JWTSecret) == "" {
