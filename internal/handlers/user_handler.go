@@ -37,8 +37,8 @@ type LoginRequest struct {
 }
 
 // CitizenSignInHandler maneja POST /auth/citizen: registra un ciudadano con contraseña
-// (mínimo 6 caracteres, guardada con bcrypt) e inicia su sesión. Responde 201 y deja
-// la cookie de sesión.
+// (debe cumplir las reglas de validatePassword, guardada con bcrypt) e inicia su sesión.
+// Responde 201 y deja la cookie de sesión.
 func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req CreateCitizen
@@ -57,8 +57,9 @@ func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFun
 			return
 		}
 
-		if len(req.Password) < 6 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "password must be at least 6"})
+		// Revisa las reglas de la contraseña antes de hashearla
+		if msg := validatePassword(req.Password); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 			return
 		}
 
