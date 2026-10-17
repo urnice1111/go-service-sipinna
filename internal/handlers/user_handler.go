@@ -6,6 +6,7 @@ import (
 	"go-service-sipinna/internal/models"
 	"go-service-sipinna/internal/repository"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,15 +19,16 @@ import (
 )
 
 // CreateCitizen es el cuerpo de POST /auth/citizen. Se requiere correo o teléfono
-// (en formato E.164).
 type CreateCitizen struct {
 	Name            string `json:"nombre" binding:"required"`
 	Age             int    `json:"edad"`
 	Genre           string `json:"genero"`
 	Email           string `json:"email" binding:"required_without=TelephoneNumber,omitempty,email"`
-	TelephoneNumber string `json:"telefono" binding:"required_without=Email,omitempty,e164"`
+	TelephoneNumber string `json:"telefono" binding:"required_without=Email"`
 	Password        string `json:"password" binding:"required"`
 }
+
+var citizenPhonePattern = regexp.MustCompile(`^(?:[0-9]{10}|\+[1-9][0-9]{1,14})$`)
 
 // LoginRequest es el cuerpo de POST /auth/login. Debe traer exactamente uno de
 // Email o Phone.
@@ -49,6 +51,10 @@ func CitizenSignInHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFun
 
 		emailMissing := strings.TrimSpace(req.Email) == ""
 		phoneMissing := strings.TrimSpace(req.TelephoneNumber) == ""
+		if !phoneMissing && !citizenPhonePattern.MatchString(req.TelephoneNumber) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "El número telefónico no es correcto."})
+			return
+		}
 
 		if emailMissing && phoneMissing {
 			c.JSON(http.StatusBadRequest, gin.H{
