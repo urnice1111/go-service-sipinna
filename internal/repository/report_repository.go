@@ -31,7 +31,7 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tem
 	WITH distancias AS (
 			SELECT
 				id,
-				municipio,
+				nombre,
 				2 * 6371000 * ASIN(
 					SQRT(
 						LEAST(
@@ -63,7 +63,7 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tem
 			AND id IS NOT NULL
 	),
 	ubicacion_cercana AS (
-			SELECT id, municipio
+			SELECT id, nombre
 			FROM distancias
 			ORDER BY distancia_metros, id
 			LIMIT 1
@@ -91,7 +91,7 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tem
 	SELECT
 				FORMAT(
 					'RIETI-%s-%s-%s',
-					UPPER(municipio),
+					UPPER(nombre),
 					TO_CHAR(CURRENT_DATE, 'YYYY'),
 					LPAD(NEXTVAL('reportes_folio_seq')::text, 6, '0')
 				),
@@ -214,7 +214,7 @@ func reportScanTargets(r *models.IndividualReport) []any {
 	}
 }
 
-// GetReportsByZone regresa los reportes filtrados por id de zona o por municipio; un
+// GetReportsByZone regresa los reportes filtrados por id de zona o por nombre; un
 // zoneID vacío regresa todas las zonas. scopeZoneID, si no es nil, además limita el
 // resultado a esa zona (se usa para los usuarios 'alimentador').
 //
@@ -243,7 +243,7 @@ func GetReportsByZone(pool *pgxpool.Pool, zoneID string, scopeZoneID *uuid.UUID)
 		` + extraReportColumns + `
 ` + reportJoins + `
 	WHERE
-		($1 = '' OR r.zona_id::text = $1 OR UPPER(z.municipio) = UPPER($1))
+		($1 = '' OR r.zona_id::text = $1 OR UPPER(z.nombre) = UPPER($1))
 		AND ($2::uuid IS NULL OR r.zona_id = $2)
 		AND he.estado != 'DRAFT';
 	`

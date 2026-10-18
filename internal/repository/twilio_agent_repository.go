@@ -17,7 +17,7 @@ func InsertReportElevenLabs(pool *pgxpool.Pool, coordinates *models.GeoCode, new
 		WITH distancias AS (
 		SELECT
 			id,
-			municipio,
+			nombre,
 			2 * 6371000 * ASIN(
 				SQRT(
 					LEAST(
@@ -45,7 +45,7 @@ func InsertReportElevenLabs(pool *pgxpool.Pool, coordinates *models.GeoCode, new
 		AND id IS NOT NULL
 	),
 	zona_cercana AS (
-		SELECT municipio, id
+		SELECT nombre, id
 		FROM distancias
 		ORDER BY distancia_metros ASC
 		LIMIT 1
@@ -65,7 +65,7 @@ func InsertReportElevenLabs(pool *pgxpool.Pool, coordinates *models.GeoCode, new
 		SELECT
 			FORMAT(
 				'RIETI-%s-%s-%s',
-				UPPER(municipio),
+				UPPER(nombre),
 				TO_CHAR(CURRENT_DATE, 'YYYY'),
 				LPAD(NEXTVAL('reportes_folio_seq')::text, 6, '0')
 			),
