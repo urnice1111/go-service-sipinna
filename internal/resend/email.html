@@ -61,19 +61,7 @@
         <tr><td class="email-padding email-text" style="padding:32px;color:#102a43;font-size:15px;line-height:1.65;">
           <h1 class="email-title" style="margin:0 0 24px;color:#102a43;font-family:'Montserrat',Arial,Helvetica,sans-serif;font-size:28px;font-weight:600;line-height:1.3;">{{.Title}}</h1>
           <p style="margin:0 0 16px;">{{.Greeting}},</p>
-          {{if .Receipt}}
-          <p style="margin:0 0 16px;">¡Gracias por ayudar a proteger los derechos de niñas, niños y adolescentes!</p>
-          <p style="margin:0 0 24px;">Tu reporte fue recibido correctamente. Conserva estos datos para consultar su avance:</p>
-          <table role="presentation" width="100%" style="width:100%;margin:0 0 24px;"><tr><td class="email-code-box" style="padding:20px;background-color:#f4f9fa;border:1px solid #e5edf0;border-radius:8px;">
-            <p style="margin:0 0 12px;"><strong>Folio:</strong> {{.Folio}}</p>
-            <p style="margin:0;"><strong>Clave de consulta:</strong> {{.AccessKey}}</p>
-          </td></tr></table>
-          <table role="presentation" width="100%" style="width:100%;margin:0 0 24px;"><tr><td>
-            <a href="{{.ActionURL}}" class="email-button" style="display:inline-block;background-color:#007e87;color:#ffffff;padding:14px 24px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:700;line-height:1.4;mso-padding-alt:14px 24px;">Consultar mi reporte</a>
-          </td></tr></table>
-          <p class="email-muted" style="margin:0 0 8px;color:#595959;font-size:13px;">Si el botón no abre la página, copia este enlace en tu navegador:</p>
-          <p style="margin:0 0 24px;font-size:13px;word-break:break-all;overflow-wrap:anywhere;"><a class="email-link" href="{{.ActionURL}}" style="color:#007e87;text-decoration:underline;">{{.ActionURL}}</a></p>
-          {{else if .Notification}}
+          {{if .Notification}}
           {{if .Urgent}}
           <table role="presentation" width="100%" style="width:100%;margin:0 0 20px;"><tr><td class="email-alert" style="padding:16px 20px;background-color:#f9edef;border:1px solid #e9bdc2;border-left:4px solid #b42332;border-radius:8px;">
             <p class="email-alert-title" style="margin:0;color:#b42332;font-size:14px;font-weight:700;line-height:1.5;">URGENTE · Prioridad alta</p>
@@ -102,7 +90,7 @@
           <p class="email-muted" style="margin:0 0 24px;color:#595959;font-size:14px;">El código vence en <strong>{{.Validity}} minutos</strong>. No compartas este código con otras personas.</p>
           {{end}}
           <table role="presentation" width="100%" style="width:100%;"><tr><td class="email-rule" style="padding-top:20px;border-top:1px solid #e5edf0;">
-            <p class="email-muted" style="margin:0;color:#595959;font-size:13px;line-height:1.65;">{{if .Receipt}}Protege tu clave de consulta: permite acceder al estado de tu reporte.{{else if .Notification}}Recibes esta notificación porque tienes asignada la atención de reportes en esta zona de SIPINNA.{{else if .Invitation}}Si no esperabas esta invitación, ignora este correo. La cuenta no se activará.{{else}}Si no solicitaste este cambio, ignora este correo. Tu contraseña no se modificará.{{end}}</p>
+            <p class="email-muted" style="margin:0;color:#595959;font-size:13px;line-height:1.65;">{{if .Notification}}Recibes esta notificación porque tienes asignada la atención de reportes en esta zona de SIPINNA.{{else if .Invitation}}Si no esperabas esta invitación, ignora este correo. La cuenta no se activará.{{else}}Si no solicitaste este cambio, ignora este correo. Tu contraseña no se modificará.{{end}}</p>
           </td></tr></table>
         </td></tr>
       </table>

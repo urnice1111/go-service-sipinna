@@ -24,16 +24,12 @@ type Report struct {
 	SightingTime     string     `json:"sighting_time" db:"horario_avistamiento"`
 	Risk             string     `json:"risk" db:"riesgo"`
 	ImmediateDanger  bool       `json:"immediate_danger" db:"peligro_inmediato"`
-	Neighborhood     string     `json:"neighborhood" db:"colonia"`
 	Reference        string     `json:"reference" db:"referencia"`
-	ContactEmail     string     `json:"-" db:"contacto_email"`
-	ContactPhone     string     `json:"-" db:"contacto_telefono"`
 	ZoneID           uuid.UUID  `json:"zone_id" db:"zona_id"`
 	CasoID           uuid.UUID  `json:"case_id" db:"caso_id"`
 	State            string     `json:"state" db:"-"`
 	SuspiciusLevel   float64    `json:"suspicius_level" db:"sospechoso"`
 	LLMAnalizedAt    time.Time  `json:"llm_analized_at" db:"llm_analizado_at"`
-	DeleteDate       time.Time  `json:"delete_date" db:"fecha_eliminacion_programada"`
 	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
 }
@@ -64,7 +60,6 @@ type IndividualReport struct {
 	ImmediateDanger  bool       `json:"immediate_danger" db:"peligro_inmediato"`
 	Priority         string     `json:"priority" db:"prioridad"`
 	Sex              string     `json:"sex" db:"sexo"`
-	Neighborhood     string     `json:"neighborhood" db:"colonia"`
 	Reference        string     `json:"reference" db:"referencia"`
 	// DuplicateOf es el folio del reporte del que este podría ser duplicado.
 	DuplicateOf   string `json:"duplicate_of" db:"folio_duplicado"`
@@ -100,7 +95,6 @@ type ReportDetail struct {
 type CaseFile struct {
 	Priority      *string `json:"priority"`
 	Sex           *string `json:"sex"`
-	Neighborhood  *string `json:"neighborhood"`
 	Responsible   *string `json:"responsible"`
 	ChanneledTo   *string `json:"channeled_to"`
 	FollowUpDate  *string `json:"follow_up_date"`
@@ -131,7 +125,6 @@ type SubmittedReport struct {
 	ZoneID          uuid.UUID
 	Folio           string
 	AccessKey       uuid.UUID
-	ContactEmail    *string
 	ImmediateDanger bool
 }
 

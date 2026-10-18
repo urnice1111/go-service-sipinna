@@ -27,8 +27,6 @@ type emailContent struct {
 	Invitation                                        bool
 	Notification, Urgent                              bool
 	Message                                           string
-	Receipt                                           bool
-	Folio, AccessKey                                  string
 }
 
 func renderPasswordResetEmail(greeting, code string, minutes int) (string, error) {
@@ -53,13 +51,6 @@ func renderReportNotificationEmail(greeting, message, link string, urgent bool) 
 	return renderEmail(emailContent{
 		Title: title, Preheader: message, Greeting: greeting, Message: message,
 		ActionURL: link, Notification: true, Urgent: urgent,
-	})
-}
-
-func renderReportReceiptEmail(folio, accessKey, link string) (string, error) {
-	return renderEmail(emailContent{
-		Title: "Recibimos tu reporte", Preheader: "Consulta el avance de tu reporte con tu folio y clave de consulta.",
-		Greeting: "Hola", Receipt: true, Folio: folio, AccessKey: accessKey, ActionURL: link,
 	})
 }
 

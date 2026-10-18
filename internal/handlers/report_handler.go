@@ -30,10 +30,7 @@ type CreateReport struct {
 	SightingTime     string  `json:"sighting_time"`
 	Risk             string  `json:"risk" binding:"omitempty,oneof=si no no_se"`
 	ImmediateDanger  bool    `json:"immediate_danger"`
-	Neighborhood     string  `json:"neighborhood" binding:"max=200"`
 	Reference        string  `json:"reference" binding:"max=500"`
-	ContactEmail     string  `json:"contact_email" binding:"omitempty,email"`
-	ContactPhone     string  `json:"contact_phone" binding:"omitempty,max=20"`
 }
 
 // CreateReportHandler crea un borrador y devuelve ID, folio y clave de consulta.
@@ -59,10 +56,7 @@ func CreateReportHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc
 			SightingTime:     req.SightingTime,
 			Risk:             req.Risk,
 			ImmediateDanger:  req.ImmediateDanger,
-			Neighborhood:     strings.TrimSpace(req.Neighborhood),
 			Reference:        strings.TrimSpace(req.Reference),
-			ContactEmail:     strings.TrimSpace(req.ContactEmail),
-			ContactPhone:     strings.TrimSpace(req.ContactPhone),
 		}
 
 		var citizenID *string
@@ -500,7 +494,7 @@ func DeleteReportHandler(pool *pgxpool.Pool, uploader *S3Uploader) gin.HandlerFu
 }
 
 // UpdateReport envía el borrador cuando todas las fotos están listas
-// Notifica al personal de la zona y envía folio y clave al correo de contacto
+// Notifica al personal de la zona
 func UpdateReport(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		reportID := c.Param("report_ref")
@@ -526,16 +520,6 @@ func UpdateReport(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 		}
 
 		go SendNotifications(pool, cfg, submitted.ZoneID.String(), submitted.ImmediateDanger)
-
-		if submitted.ContactEmail != nil {
-			go func(email, folio, key string) {
-				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-				defer cancel()
-				if err := resend.SendReportReceipt(ctx, cfg, email, folio, key); err != nil {
-					log.Printf("could not send receipt of report %s: %v", folio, err)
-				}
-			}(*submitted.ContactEmail, submitted.Folio, submitted.AccessKey.String())
-		}
 
 		c.JSON(http.StatusOK, true)
 

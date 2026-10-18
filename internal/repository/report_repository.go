@@ -84,10 +84,7 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tem
 		riesgo,
 		peligro_inmediato,
 		prioridad,
-		colonia,
-		referencia,
-		contacto_email,
-		contacto_telefono)
+		referencia)
 	SELECT
 				FORMAT(
 					'RIETI-%s-%s-%s',
@@ -108,10 +105,7 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tem
 				NULLIF($10, ''),
 				$11,
 				CASE WHEN $11 THEN 'alta' ELSE 'normal' END,
-				NULLIF($12, ''),
-				NULLIF($13, ''),
-				NULLIF($14, ''),
-				NULLIF($15, '')
+				NULLIF($12, '')
 			FROM ubicacion_cercana
 			RETURNING id, folio, clave_consulta
 	)
@@ -133,10 +127,7 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tem
 		tempKey,
 		r.Risk,
 		r.ImmediateDanger,
-		r.Neighborhood,
 		r.Reference,
-		r.ContactEmail,
-		r.ContactPhone,
 	).Scan(
 		&r.ID,
 		&r.Folio,
@@ -159,7 +150,6 @@ const extraReportColumns = `
 		r.peligro_inmediato,
 		r.prioridad,
 		COALESCE(r.sexo, '') AS sexo,
-		COALESCE(r.colonia, '') AS colonia,
 		COALESCE(r.referencia, '') AS referencia,
 		COALESCE(dup.folio, '') AS folio_duplicado,
 		r.nna_atendidos,
@@ -205,7 +195,6 @@ func reportScanTargets(r *models.IndividualReport) []any {
 		&r.ImmediateDanger,
 		&r.Priority,
 		&r.Sex,
-		&r.Neighborhood,
 		&r.Reference,
 		&r.DuplicateOf,
 		&r.ChildrenCared,
@@ -374,17 +363,12 @@ func UpdateReportStatus(
 		return time.Time{}, err
 	}
 
-	// Minimización de datos: el contacto de seguimiento solo se guarda mientras el
-	// reporte sigue abierto.
 	const queryTouchReport = `
 		UPDATE reportes
-		SET updated_at = $1,
-			contacto_email = CASE WHEN $3 THEN NULL ELSE contacto_email END,
-			contacto_telefono = CASE WHEN $3 THEN NULL ELSE contacto_telefono END
+		SET updated_at = $1
 		WHERE id = $2
 	`
-	closing := status == "concluido" || status == "archivado" || status == "cancelado"
-	if _, err := tx.Exec(ctx, queryTouchReport, changedAt, reportID, closing); err != nil {
+	if _, err := tx.Exec(ctx, queryTouchReport, changedAt, reportID); err != nil {
 		return time.Time{}, err
 	}
 
@@ -681,11 +665,11 @@ func UpdateReportDraft(pool *pgxpool.Pool, reportID string) (*models.SubmittedRe
 		UPDATE reportes
 		SET temp_key = NULL
 		WHERE id IN (SELECT reporte_id FROM submitted)
-		RETURNING zona_id, folio, clave_consulta, contacto_email, peligro_inmediato;
+		RETURNING zona_id, folio, clave_consulta, peligro_inmediato;
 	`
 
 	var sr models.SubmittedReport
-	err := pool.QueryRow(ctx, query, reportID).Scan(&sr.ZoneID, &sr.Folio, &sr.AccessKey, &sr.ContactEmail, &sr.ImmediateDanger)
+	err := pool.QueryRow(ctx, query, reportID).Scan(&sr.ZoneID, &sr.Folio, &sr.AccessKey, &sr.ImmediateDanger)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("reporte no encontrado o todavía tiene imágenes pendientes")
 	}
@@ -743,24 +727,23 @@ func UpdateCaseFile(pool *pgxpool.Pool, folio string, f models.CaseFile, scopeZo
 		UPDATE reportes
 		SET prioridad = COALESCE(NULLIF($1, ''), prioridad),
 			sexo = CASE WHEN $2::text IS NULL THEN sexo ELSE NULLIF($2, '') END,
-			colonia = CASE WHEN $3::text IS NULL THEN colonia ELSE NULLIF($3, '') END,
-			responsable = CASE WHEN $4::text IS NULL THEN responsable ELSE NULLIF($4, '') END,
-			dependencia_canalizada = CASE WHEN $5::text IS NULL THEN dependencia_canalizada ELSE NULLIF($5, '') END,
-			fecha_seguimiento = CASE WHEN $6::text IS NULL THEN fecha_seguimiento ELSE NULLIF($6, '')::date END,
-			resultado = CASE WHEN $7::text IS NULL THEN resultado ELSE NULLIF($7, '') END,
-			nna_atendidos = COALESCE($8, nna_atendidos),
-			fecha_cierre = CASE WHEN $9::text IS NULL THEN fecha_cierre ELSE NULLIF($9, '')::date END,
+			responsable = CASE WHEN $3::text IS NULL THEN responsable ELSE NULLIF($3, '') END,
+			dependencia_canalizada = CASE WHEN $4::text IS NULL THEN dependencia_canalizada ELSE NULLIF($4, '') END,
+			fecha_seguimiento = CASE WHEN $5::text IS NULL THEN fecha_seguimiento ELSE NULLIF($5, '')::date END,
+			resultado = CASE WHEN $6::text IS NULL THEN resultado ELSE NULLIF($6, '') END,
+			nna_atendidos = COALESCE($7, nna_atendidos),
+			fecha_cierre = CASE WHEN $8::text IS NULL THEN fecha_cierre ELSE NULLIF($8, '')::date END,
 			posible_duplicado_de = CASE
-				WHEN $10::text IS NULL THEN posible_duplicado_de
-				WHEN $10 = '' THEN NULL
-				ELSE (SELECT id FROM reportes WHERE folio = $10 AND folio <> $11 AND ($12::uuid IS NULL OR zona_id = $12))
+				WHEN $9::text IS NULL THEN posible_duplicado_de
+				WHEN $9 = '' THEN NULL
+				ELSE (SELECT id FROM reportes WHERE folio = $9 AND folio <> $10 AND ($11::uuid IS NULL OR zona_id = $11))
 			END
-		WHERE folio = $11
-			AND ($12::uuid IS NULL OR zona_id = $12)
+		WHERE folio = $10
+			AND ($11::uuid IS NULL OR zona_id = $11)
 	`
 
 	tag, err := pool.Exec(ctx, query,
-		f.Priority, f.Sex, f.Neighborhood, f.Responsible, f.ChanneledTo, f.FollowUpDate,
+		f.Priority, f.Sex, f.Responsible, f.ChanneledTo, f.FollowUpDate,
 		f.Outcome, f.ChildrenCared, f.ClosedDate, f.DuplicateOf, folio, scopeZoneID)
 	if err != nil {
 		return err

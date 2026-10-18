@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"go-service-sipinna/internal/config"
-	"net/url"
 	"strings"
 
 	"github.com/resend/resend-go/v4"
@@ -104,21 +103,4 @@ func SendOneNotification(ctx context.Context, cfg *config.Config, name, email st
 	text := fmt.Sprintf("%s,\n\n%s\n\nRevisar reportes: %s\n", greeting, message, link)
 
 	return send(ctx, cfg, email, subject, body, text)
-}
-
-// SendReportReceipt envía el folio y la clave de consulta al ciudadano.
-func SendReportReceipt(ctx context.Context, cfg *config.Config, email, folio, accessKey string) error {
-	link := strings.TrimRight(cfg.FrontendURL, "/") + "/consultar-folio?" + url.Values{
-		"folio": {folio},
-		"clave": {accessKey},
-	}.Encode()
-
-	body, err := renderReportReceiptEmail(folio, accessKey, link)
-	if err != nil {
-		return err
-	}
-
-	text := fmt.Sprintf("¡Gracias por ayudar a proteger los derechos de niñas, niños y adolescentes!\n\nTu reporte fue recibido correctamente.\nFolio: %s\nClave de consulta: %s\n\nConsulta el avance: %s\n", folio, accessKey, link)
-
-	return send(ctx, cfg, email, "Tu reporte RIETI "+folio, body, text)
 }
