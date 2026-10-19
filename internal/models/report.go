@@ -52,6 +52,7 @@ type IndividualReport struct {
 	SuspiciusLevel   *float64   `json:"suspicius_level" db:"sospechoso"`
 	ChildrenAge      string     `json:"children_age" db:"edad_ninos"`
 	ZoneName         string     `json:"zone_name" db:"nombre_zona"`
+	ZoneMunicipio    string     `json:"zone_municipio" db:"municipio_zona"`
 	CitizenName      string     `json:"citizen_name" db:"nombre_ciudadano"`
 	LastState        string     `json:"last_state" db:"ultimo_estado"`
 	StateChangedAt   time.Time  `json:"state_changed_at" db:"estado_changed_at"`

@@ -143,8 +143,8 @@ func CreateReport(pool *pgxpool.Pool, r *models.Report, ciudadanoID *string, tem
 }
 
 // extraReportColumns comparte columnas entre listado y detalle, en orden de escaneo.
-// Requiere los alias r (reporte) y dup (original).
 const extraReportColumns = `
+		COALESCE(z.municipio, '') AS municipio_zona,
 		COALESCE(r.horario_avistamiento, '') AS horario_avistamiento,
 		COALESCE(r.riesgo, '') AS riesgo,
 		r.peligro_inmediato,
@@ -190,6 +190,7 @@ func reportScanTargets(r *models.IndividualReport) []any {
 		&r.CitizenName,
 		&r.LastState,
 		&r.StateChangedAt,
+		&r.ZoneMunicipio,
 		&r.SightingTime,
 		&r.Risk,
 		&r.ImmediateDanger,
