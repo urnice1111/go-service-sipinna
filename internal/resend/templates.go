@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
+	"math"
 )
 
 //go:embed email.html
@@ -27,6 +28,46 @@ type emailContent struct {
 	Invitation                                        bool
 	Notification, Urgent                              bool
 	Message                                           string
+	Veracity                                          *veracityView
+}
+
+// veracityView es la probabilidad de veracidad ya formateada para el correo.
+type veracityView struct {
+	Ready                bool   // false si el análisis aún no termina
+	TruePct, FalsePct    int    // porcentajes que suman 100
+	Level, Color, Detail string // nivel de confianza en texto, color del nivel y explicación
+}
+
+// Text es la versión en texto plano del análisis.
+func (v *veracityView) Text() string {
+	if !v.Ready {
+		return "Análisis de veracidad: " + v.Detail
+	}
+	return fmt.Sprintf("Análisis de veracidad: %d %% probable que sea verídico, %d %% probable que sea falso (%s). %s",
+		v.TruePct, v.FalsePct, v.Level, v.Detail)
+}
+
+// veracityContent convierte el puntaje de sospecha en porcentajes y un nivel.
+func veracityContent(v *Veracity) *veracityView {
+	if v == nil {
+		return nil
+	}
+	if v.Suspicion == nil {
+		return &veracityView{Detail: "El análisis automático todavía está en proceso. Consulta el nivel de sospecha en la plataforma."}
+	}
+
+	falsePct := int(math.Round(math.Min(math.Max(*v.Suspicion, 0), 1) * 100))
+	view := &veracityView{Ready: true, TruePct: 100 - falsePct, FalsePct: falsePct,
+		Detail: "Es una estimación automática: no descarta el reporte, atiéndelo según el protocolo."}
+	switch {
+	case view.TruePct >= 70:
+		view.Level, view.Color = "probablemente verídico", "#1e7a46"
+	case view.TruePct >= 40:
+		view.Level, view.Color = "veracidad incierta", "#9a6200"
+	default:
+		view.Level, view.Color = "posiblemente falso", "#b42332"
+	}
+	return view
 }
 
 func renderPasswordResetEmail(greeting, code string, minutes int) (string, error) {
@@ -43,14 +84,14 @@ func renderStaffInvitationEmail(greeting, role, link string, hours int) (string,
 	})
 }
 
-func renderReportNotificationEmail(greeting, message, link string, urgent bool) (string, error) {
+func renderReportNotificationEmail(greeting, message, link string, urgent bool, veracity *veracityView) (string, error) {
 	title := "Nuevo reporte en tu zona"
 	if urgent {
 		title = "Reporte con peligro inmediato"
 	}
 	return renderEmail(emailContent{
 		Title: title, Preheader: message, Greeting: greeting, Message: message,
-		ActionURL: link, Notification: true, Urgent: urgent,
+		ActionURL: link, Notification: true, Urgent: urgent, Veracity: veracity,
 	})
 }
 

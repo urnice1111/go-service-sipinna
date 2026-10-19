@@ -123,10 +123,12 @@ type PublicReportStatus struct {
 
 // SubmittedReport contiene los datos para notificar el envío.
 type SubmittedReport struct {
+	ID              uuid.UUID
 	ZoneID          uuid.UUID
 	Folio           string
 	AccessKey       uuid.UUID
 	ImmediateDanger bool
+	Risk            string
 }
 
 // LogEntry es una fila de la bitácora de accesos.

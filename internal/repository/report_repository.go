@@ -666,11 +666,11 @@ func UpdateReportDraft(pool *pgxpool.Pool, reportID string) (*models.SubmittedRe
 		UPDATE reportes
 		SET temp_key = NULL
 		WHERE id IN (SELECT reporte_id FROM submitted)
-		RETURNING zona_id, folio, clave_consulta, peligro_inmediato;
+		RETURNING id, zona_id, folio, clave_consulta, peligro_inmediato, COALESCE(riesgo, '');
 	`
 
 	var sr models.SubmittedReport
-	err := pool.QueryRow(ctx, query, reportID).Scan(&sr.ZoneID, &sr.Folio, &sr.AccessKey, &sr.ImmediateDanger)
+	err := pool.QueryRow(ctx, query, reportID).Scan(&sr.ID, &sr.ZoneID, &sr.Folio, &sr.AccessKey, &sr.ImmediateDanger, &sr.Risk)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("reporte no encontrado o todavía tiene imágenes pendientes")
 	}
@@ -934,4 +934,11 @@ func GetPresignedURL(bucketName string, objectKey string, lifetimeDuration time.
 
 	// 4. Return the complete signed URL string
 	return presignedReq.URL, nil
+}
+
+// GetReportSuspicion regresa el puntaje de sospecha del reporte (0 = legítimo, 1 = falso) o nil si el análisis no ha terminado
+func GetReportSuspicion(ctx context.Context, pool *pgxpool.Pool, reportID uuid.UUID) (*float64, error) {
+	var score *float64
+	err := pool.QueryRow(ctx, `SELECT sospechoso FROM reportes WHERE id = $1`, reportID).Scan(&score)
+	return score, err
 }

@@ -519,14 +519,31 @@ func UpdateReport(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
-		go SendNotifications(pool, cfg, submitted.ZoneID.String(), submitted.ImmediateDanger)
+		go SendNotifications(pool, cfg, submitted)
 
 		c.JSON(http.StatusOK, true)
 
 	}
 }
 
-func SendNotifications(pool *pgxpool.Pool, cfg *config.Config, zoneID string, urgent bool) {
+// Cuánto se espera al análisis de veracidad antes de enviar un correo de prioridad
+// alta o alto riesgo, y cada cuánto se revisa. El worker de análisis corre cada 15 s.
+const (
+	veracityWait     = 40 * time.Second
+	veracityInterval = 3 * time.Second
+)
+
+// SendNotifications avisa a los alimentadores de la zona. En los reportes de prioridad
+// alta (peligro inmediato) o alto riesgo agrega la probabilidad de que sean verídicos.
+func SendNotifications(pool *pgxpool.Pool, cfg *config.Config, submitted *models.SubmittedReport) {
+	zoneID := submitted.ZoneID.String()
+	urgent := submitted.ImmediateDanger
+
+	var veracity *resend.Veracity
+	if submitted.ImmediateDanger || submitted.Risk == "si" {
+		veracity = &resend.Veracity{Suspicion: waitForSuspicion(pool, submitted.ID)}
+	}
+
 	alimentadores, err := repository.GetAllAlimentadores(pool, zoneID)
 	if err != nil {
 		log.Printf("could not list alimentadores for zone %s: %v", zoneID, err)
@@ -536,9 +553,28 @@ func SendNotifications(pool *pgxpool.Pool, cfg *config.Config, zoneID string, ur
 		go func(name, email string) {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			if err := resend.SendOneNotification(ctx, cfg, name, email, urgent); err != nil {
+			if err := resend.SendOneNotification(ctx, cfg, name, email, urgent, veracity); err != nil {
 				log.Printf("could not notify %s: %v", email, err)
 			}
 		}(alimentador.Name, alimentador.Email)
+	}
+}
+
+// waitForSuspicion espera a que el worker de análisis guarde el puntaje de sospecha regresa nil si no ha terminado
+func waitForSuspicion(pool *pgxpool.Pool, reportID uuid.UUID) *float64 {
+	deadline := time.Now().Add(veracityWait)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		score, err := repository.GetReportSuspicion(ctx, pool, reportID)
+		cancel()
+		if err != nil {
+			log.Printf("could not read suspicion of report %s: %v", reportID, err)
+		} else if score != nil {
+			return score
+		}
+		if time.Now().Add(veracityInterval).After(deadline) {
+			return nil
+		}
+		time.Sleep(veracityInterval)
 	}
 }

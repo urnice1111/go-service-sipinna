@@ -80,8 +80,13 @@ func SendStaffInvitation(ctx context.Context, cfg *config.Config, recipientEmail
 	return send(ctx, cfg, recipientEmail, "Tu invitación a SIPINNA", body, text)
 }
 
-// SendOneNotification avisa a un alimentador de un reporte nuevo
-func SendOneNotification(ctx context.Context, cfg *config.Config, name, email string, urgent bool) error {
+// Veracity es la estimación de veracidad que se agrega al correo de los reportes nuevos que son prioritarios
+type Veracity struct {
+	Suspicion *float64
+}
+
+// SendOneNotification avisa a un alimentador de un reporte nuevo.
+func SendOneNotification(ctx context.Context, cfg *config.Config, name, email string, urgent bool, veracity *Veracity) error {
 	greeting := "Hola"
 	if name = strings.TrimSpace(name); name != "" {
 		greeting += " " + name
@@ -95,12 +100,17 @@ func SendOneNotification(ctx context.Context, cfg *config.Config, name, email st
 	}
 
 	link := strings.TrimRight(cfg.FrontendURL, "/") + "/reports"
-	body, err := renderReportNotificationEmail(greeting, message, link, urgent)
+	analysis := veracityContent(veracity)
+	body, err := renderReportNotificationEmail(greeting, message, link, urgent, analysis)
 	if err != nil {
 		return err
 	}
 
-	text := fmt.Sprintf("%s,\n\n%s\n\nRevisar reportes: %s\n", greeting, message, link)
+	text := fmt.Sprintf("%s,\n\n%s\n\n", greeting, message)
+	if analysis != nil {
+		text += analysis.Text() + "\n\n"
+	}
+	text += fmt.Sprintf("Revisar reportes: %s\n", link)
 
 	return send(ctx, cfg, email, subject, body, text)
 }
