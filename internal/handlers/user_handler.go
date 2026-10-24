@@ -7,6 +7,7 @@ import (
 	"go-service-sipinna/internal/repository"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -122,6 +123,17 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
+		allowed, err := repository.ReserveLoginAttempt(pool, stringValue(req.Email), stringValue(req.Phone))
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "No se pudo verificar el límite de intentos. Inténtalo más tarde."})
+			return
+		}
+		if !allowed {
+			c.Header("Retry-After", strconv.Itoa(int(repository.LoginAttemptWindow.Seconds())))
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "Demasiados intentos de inicio de sesión. Espera 15 minutos e inténtalo de nuevo."})
+			return
+		}
+
 		user, err := repository.GetUserByContact(pool, stringValue(req.Email), stringValue(req.Phone))
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
@@ -146,6 +158,11 @@ func LoginHandler(pool *pgxpool.Pool, cfg *config.Config) gin.HandlerFunc {
 		}
 
 		respondWithToken(c, http.StatusOK, user.ID, cfg, isAdmin, userType, user.Name, zoneName)
+		if c.Writer.Status() == http.StatusOK {
+			if err := repository.ClearLoginAttempts(pool, stringValue(req.Email), stringValue(req.Phone)); err != nil {
+				_ = c.Error(err)
+			}
+		}
 	}
 }
 
